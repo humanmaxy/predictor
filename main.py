@@ -4,7 +4,7 @@ import random
 from pathlib import Path
 from typing import Optional, List, Tuple
 
-from PyQt5.QtCore import Qt, QRectF, QPointF, pyqtSignal, QThread
+from PyQt5.QtCore import Qt, QRectF, QPointF, pyqtSignal, QThread, QStringListModel
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QImage, QImageReader
 from PyQt5.QtWidgets import (
     QApplication,
@@ -20,6 +20,9 @@ from PyQt5.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSplitter,
+    QListView,
+    QAbstractItemView,
 )
 
 
@@ -237,14 +240,63 @@ class ImageLoaderWorker(QThread):
             self.loaded.emit(image, self._path)
 
 
+class FolderScanWorker(QThread):
+    scanned = pyqtSignal(list, str)  # (paths, root)
+
+    def __init__(self, root_dir: str, max_depth: int = 3):
+        super().__init__()
+        self.root_dir = root_dir
+        self.max_depth = max_depth
+
+    def run(self):
+        results: List[str] = []
+        root = Path(self.root_dir)
+        try:
+            def scan_dir(path: Path, depth: int):
+                try:
+                    with os.scandir(path) as it:
+                        for entry in it:
+                            try:
+                                if entry.is_dir(follow_symlinks=False):
+                                    if depth < self.max_depth:
+                                        scan_dir(Path(entry.path), depth + 1)
+                                elif entry.is_file(follow_symlinks=False):
+                                    ext = os.path.splitext(entry.name)[1].lower()
+                                    if ext in SUPPORTED_EXTS:
+                                        results.append(entry.path)
+                            except PermissionError:
+                                continue
+                except Exception:
+                    return
+            scan_dir(root, 0)
+            results.sort()
+        except Exception:
+            results = []
+        self.scanned.emit(results, str(root))
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("大图像预览与选区裁剪")
         self.resize(1280, 840)
 
+        # Central splitter: left list, right view
         self.view = ImageGraphicsView(self)
-        self.setCentralWidget(self.view)
+        self.list_view = QListView(self)
+        self.list_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.list_view.setUniformItemSizes(True)
+        self.list_view.clicked.connect(self.on_list_clicked)
+        self.model = QStringListModel(self)
+        self.list_view.setModel(self.model)
+
+        splitter = QSplitter(Qt.Horizontal, self)
+        splitter.addWidget(self.list_view)
+        splitter.addWidget(self.view)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([320, 960])
+        self.setCentralWidget(splitter)
 
         self._status_label = QLabel("")
         self.statusBar().addPermanentWidget(self._status_label)
@@ -253,19 +305,23 @@ class MainWindow(QMainWindow):
         self._create_toolbar()
         self._connect_signals()
 
+        # State
         self.image_paths: List[str] = []
+        self.display_names: List[str] = []
         self.current_index: int = -1
         self.current_path: str = ""
+        self.root_dir: str = ""
 
         self._loader: Optional[ImageLoaderWorker] = None
         self._pending_path: str = ""
+        self._scan_worker: Optional[FolderScanWorker] = None
 
         self._update_action_states()
 
     def _create_actions(self) -> None:
-        self.open_act = QAction("打开", self)
+        self.open_act = QAction("打开文件夹", self)
         self.open_act.setShortcut("Ctrl+O")
-        self.open_act.triggered.connect(self.on_open)
+        self.open_act.triggered.connect(self.on_open_folder)
 
         self.save_sel_act = QAction("保存选区", self)
         self.save_sel_act.setShortcut("Ctrl+S")
@@ -305,13 +361,13 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.zoom_out_act)
         toolbar.addAction(self.zoom_reset_act)
 
-        # Path input to open by typing
+        # Folder path input
         toolbar.addSeparator()
         self.path_edit = QLineEdit(self)
-        self.path_edit.setPlaceholderText("输入图像文件路径后按回车")
-        self.path_edit.returnPressed.connect(self.on_open_from_edit)
+        self.path_edit.setPlaceholderText("输入文件夹路径后按回车")
+        self.path_edit.returnPressed.connect(self.on_open_folder_from_edit)
         self.path_edit.setFixedWidth(420)
-        toolbar.addWidget(QLabel(" 路径:"))
+        toolbar.addWidget(QLabel(" 文件夹:"))
         toolbar.addWidget(self.path_edit)
 
         # Three quick-save directories + buttons
@@ -365,32 +421,25 @@ class MainWindow(QMainWindow):
         self.save3_btn.setEnabled(can_quicksave3)
 
     # Navigation helpers
-    def _collect_images_in_dir(self, dir_path: Path) -> List[str]:
-        try:
-            items = sorted(dir_path.iterdir())
-        except Exception:
-            return []
-        results: List[str] = []
-        for p in items:
-            if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS:
-                results.append(str(p))
-        return results
+    def _collect_display_names(self, paths: List[str], root: str) -> List[str]:
+        names: List[str] = []
+        root_path = Path(root)
+        for p in paths:
+            try:
+                rel = str(Path(p).relative_to(root_path))
+            except Exception:
+                rel = os.path.basename(p)
+            names.append(rel)
+        return names
 
-    def _set_current_path_and_list(self, path: str) -> None:
-        p = Path(path)
-        if not p.exists():
+    def _select_index(self, idx: int) -> None:
+        if idx < 0 or idx >= len(self.image_paths):
             return
-        dir_path = p.parent
-        self.image_paths = self._collect_images_in_dir(dir_path)
-        try:
-            self.current_index = self.image_paths.index(str(p))
-        except ValueError:
-            # 若未列出（大小写或链接问题），插入到列表
-            self.image_paths.append(str(p))
-            self.image_paths.sort()
-            self.current_index = self.image_paths.index(str(p))
-        self.current_path = str(p)
-        self.path_edit.setText(self.current_path)
+        self.current_index = idx
+        self.current_path = self.image_paths[idx]
+        index = self.model.index(idx)
+        self.list_view.setCurrentIndex(index)
+        self.list_view.scrollTo(index)
 
     def _navigate(self, step: int) -> None:
         if not self.image_paths:
@@ -398,18 +447,61 @@ class MainWindow(QMainWindow):
         if self.current_index < 0:
             return
         new_index = (self.current_index + step) % len(self.image_paths)
+        self._select_index(new_index)
         self.open_image(self.image_paths[new_index])
+
+    # Folder operations
+    def on_open_folder(self):
+        dir_path = QFileDialog.getExistingDirectory(self, "选择文件夹", "")
+        if not dir_path:
+            return
+        self.open_folder(dir_path)
+
+    def on_open_folder_from_edit(self):
+        text = self.path_edit.text().strip()
+        if not text:
+            return
+        self.open_folder(text)
+
+    def open_folder(self, folder_path: str) -> None:
+        p = Path(folder_path)
+        if not p.exists() or not p.is_dir():
+            QMessageBox.warning(self, "无效路径", "请输入有效的文件夹路径。")
+            return
+        self.root_dir = str(p)
+        self.path_edit.setText(self.root_dir)
+        self.statusBar().showMessage("扫描文件中...")
+        self.model.setStringList([])
+        self.image_paths = []
+        self.display_names = []
+        if self._scan_worker is not None and self._scan_worker.isRunning():
+            # Let it finish; new scan will override when emits
+            pass
+        worker = FolderScanWorker(self.root_dir, max_depth=3)
+        worker.scanned.connect(self._on_scanned)
+        self._scan_worker = worker
+        worker.start()
+
+    def _on_scanned(self, paths: List[str], root: str) -> None:
+        if root != self.root_dir:
+            return
+        self.image_paths = paths
+        self.display_names = self._collect_display_names(paths, root)
+        self.model.setStringList(self.display_names)
+        self.statusBar().showMessage(f"已扫描 {len(paths)} 个图像。", 2000)
+        if self.image_paths:
+            self._select_index(0)
+            self.open_image(self.image_paths[0])
+        else:
+            self.current_index = -1
+            self.current_path = ""
+        self._update_action_states()
 
     # Open/Load operations
     def open_image(self, path: str) -> None:
-        self._set_current_path_and_list(path)
-        self._start_async_load(self.current_path)
-
-    def _start_async_load(self, path: str) -> None:
-        # Stop previous loader if running (let it finish silently; we guard by path match)
+        # Start async load only; list state handled elsewhere
         self._pending_path = path
         if self._loader is not None and self._loader.isRunning():
-            # Let the previous loader finish; we'll ignore its result if outdated
             pass
         self.statusBar().showMessage("加载中...")
         loader = ImageLoaderWorker(path)
@@ -427,6 +519,8 @@ class MainWindow(QMainWindow):
             self.current_index = self.image_paths.index(path)
         except ValueError:
             pass
+        if 0 <= self.current_index < len(self.image_paths):
+            self._select_index(self.current_index)
         self.setWindowTitle(f"大图像预览与选区裁剪 - {Path(path).name}")
         self.statusBar().showMessage("已加载图像。", 1500)
         self._update_action_states()
@@ -437,24 +531,14 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "打开失败", f"无法打开该图像文件。\n{error}")
         self.statusBar().clearMessage()
 
-    # Slots
-    def on_open(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "选择图像文件",
-            "",
-            "图像文件 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp);;所有文件 (*.*)",
-        )
-        if not path:
-            return
-        self.open_image(path)
+    # List interactions
+    def on_list_clicked(self, index):
+        row = index.row()
+        if 0 <= row < len(self.image_paths):
+            self._select_index(row)
+            self.open_image(self.image_paths[row])
 
-    def on_open_from_edit(self):
-        text = self.path_edit.text().strip()
-        if not text:
-            return
-        self.open_image(text)
-
+    # Save / Selection
     def on_save_selection(self):
         if not self.view.has_image():
             return
@@ -575,9 +659,19 @@ def main():
     win = MainWindow()
     win.show()
 
-    # Support opening image via CLI arg
+    # Support opening image or folder via CLI arg
     if len(sys.argv) > 1:
-        win.open_image(sys.argv[1])
+        arg = sys.argv[1]
+        if os.path.isdir(arg):
+            win.open_folder(arg)
+        else:
+            # Open file: set folder then load file
+            p = Path(arg)
+            if p.exists():
+                win.open_folder(str(p.parent))
+                # when scanning done, it will auto open first; we try to open specific file once list ready
+                # Quick path: if file exists, open directly now (list may update later and sync selection)
+                win.open_image(str(p))
 
     sys.exit(app.exec_())
 
