@@ -96,7 +96,10 @@ class ChatClient:
         cos_btn = ttk.Button(preset_frame, text="COS云聊天", 
                             command=self.start_cos_chat)
         cos_btn.grid(row=0, column=4, padx=(0, 5))
-        cos_btn.config(style="Accent.TButton")
+        
+        share_btn = ttk.Button(preset_frame, text="共享目录聊天", 
+                              command=self.start_network_share_chat)
+        share_btn.grid(row=1, column=0, columnspan=5, pady=(5, 0), sticky=(tk.W, tk.E))
         
         # 用户信息区域
         user_frame = ttk.LabelFrame(main_frame, text="用户信息", padding="5")
@@ -665,6 +668,19 @@ class ChatClient:
             
         except Exception as e:
             messagebox.showerror("启动错误", f"无法启动COS聊天客户端: {str(e)}")
+    
+    def start_network_share_chat(self):
+        """启动网络共享目录聊天"""
+        try:
+            import subprocess
+            import sys
+            
+            # 启动网络共享聊天客户端
+            subprocess.Popen([sys.executable, "network_share_chat.py"])
+            self.add_system_message("正在启动网络共享目录聊天客户端...")
+            
+        except Exception as e:
+            messagebox.showerror("启动错误", f"无法启动网络共享聊天客户端: {str(e)}")
 
 def main():
     """主函数"""

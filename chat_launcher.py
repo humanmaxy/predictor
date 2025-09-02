@@ -87,6 +87,23 @@ class ChatLauncher:
         ttk.Button(cos_btn_frame, text="查看演示", 
                   command=self.show_cos_demo).pack(side=tk.LEFT)
         
+        # 网络共享模式
+        share_frame = ttk.LabelFrame(options_frame, text="📁 网络共享目录聊天", padding="15")
+        share_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        share_desc = ttk.Label(share_frame,
+                              text="• 基于局域网共享目录的聊天\n• 消息存储在指定网络目录\n• 每天凌晨2点自动清理\n• 适合企业内网环境",
+                              font=("Arial", 10))
+        share_desc.pack(anchor=tk.W, pady=(0, 10))
+        
+        share_btn_frame = ttk.Frame(share_frame)
+        share_btn_frame.pack(fill=tk.X)
+        
+        ttk.Button(share_btn_frame, text="启动共享聊天", 
+                  command=self.start_network_share_client).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(share_btn_frame, text="清理工具", 
+                  command=self.start_cleanup_tool).pack(side=tk.LEFT)
+        
         # 工具区域
         tools_frame = ttk.LabelFrame(options_frame, text="🔧 工具和配置", padding="15")
         tools_frame.pack(fill=tk.X)
@@ -106,7 +123,7 @@ class ChatLauncher:
         info_frame.pack(fill=tk.X, side=tk.BOTTOM)
         
         info_label = ttk.Label(info_frame, 
-                              text="💡 提示：WebSocket模式适合局域网实时聊天，COS模式适合跨网络持久化聊天",
+                              text="💡 提示：WebSocket适合实时聊天，COS适合跨网络聊天，共享目录适合企业内网",
                               font=("Arial", 9), foreground="gray")
         info_label.pack()
     
@@ -165,6 +182,22 @@ class ChatLauncher:
             self.show_info("快速启动", "快速启动工具已打开")
         except Exception as e:
             messagebox.showerror("启动错误", f"无法启动快速启动工具: {str(e)}")
+    
+    def start_network_share_client(self):
+        """启动网络共享聊天客户端"""
+        try:
+            subprocess.Popen([sys.executable, "network_share_chat.py"])
+            self.show_info("网络共享聊天", "网络共享目录聊天客户端已启动")
+        except Exception as e:
+            messagebox.showerror("启动错误", f"无法启动网络共享聊天客户端: {str(e)}")
+    
+    def start_cleanup_tool(self):
+        """启动清理工具"""
+        try:
+            subprocess.Popen([sys.executable, "network_share_cleanup.py"])
+            self.show_info("清理工具", "网络共享清理工具已启动")
+        except Exception as e:
+            messagebox.showerror("启动错误", f"无法启动清理工具: {str(e)}")
     
     def show_info(self, title: str, message: str):
         """显示信息"""
