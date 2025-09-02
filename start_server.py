@@ -117,9 +117,21 @@ class ServerLauncher:
         
         # 主机地址
         ttk.Label(main_frame, text="主机地址:").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.host_var = tk.StringVar(value="localhost")
+        self.host_var = tk.StringVar(value="0.0.0.0")  # 默认监听所有接口以支持局域网
         host_entry = ttk.Entry(main_frame, textvariable=self.host_var)
         host_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
+        
+        # 添加快速配置按钮
+        config_frame = ttk.Frame(main_frame)
+        config_frame.grid(row=1, column=2, padx=(10, 0), pady=5)
+        
+        local_btn = ttk.Button(config_frame, text="本地", 
+                              command=lambda: self.host_var.set("localhost"))
+        local_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        lan_btn = ttk.Button(config_frame, text="局域网", 
+                            command=lambda: self.host_var.set("0.0.0.0"))
+        lan_btn.pack(side=tk.LEFT)
         
         # 端口
         ttk.Label(main_frame, text="端口:").grid(row=2, column=0, sticky=tk.W, pady=5)

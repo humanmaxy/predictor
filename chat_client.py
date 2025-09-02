@@ -71,6 +71,24 @@ class ChatClient:
                                     values=["HTTP", "HTTPS"], state="readonly", width=10)
         protocol_combo.grid(row=1, column=1, sticky=tk.W, pady=(5, 0))
         
+        # 快速连接预设
+        preset_frame = ttk.Frame(config_frame)
+        preset_frame.grid(row=2, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=(10, 0))
+        
+        ttk.Label(preset_frame, text="快速连接:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
+        
+        local_btn = ttk.Button(preset_frame, text="本地", 
+                              command=lambda: self.set_server_config("localhost", "8765"))
+        local_btn.grid(row=0, column=1, padx=(0, 5))
+        
+        lan_btn = ttk.Button(preset_frame, text="局域网", 
+                            command=lambda: self.set_server_config("172.27.66.166", "8765"))
+        lan_btn.grid(row=0, column=2, padx=(0, 5))
+        
+        custom_btn = ttk.Button(preset_frame, text="自定义", 
+                               command=self.show_custom_config)
+        custom_btn.grid(row=0, column=3)
+        
         # 用户信息区域
         user_frame = ttk.LabelFrame(main_frame, text="用户信息", padding="5")
         user_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
@@ -147,6 +165,68 @@ class ChatClient:
         self.message_entry.config(state=state)
         self.send_btn.config(state=state)
     
+    def set_server_config(self, host: str, port: str):
+        """设置服务器配置"""
+        self.host_var.set(host)
+        self.port_var.set(port)
+        self.add_system_message(f"服务器配置已设置为: {host}:{port}")
+    
+    def show_custom_config(self):
+        """显示自定义配置对话框"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("自定义服务器配置")
+        dialog.geometry("400x300")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # 居中显示
+        dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 50, self.root.winfo_rooty() + 50))
+        
+        frame = ttk.Frame(dialog, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 自定义地址输入
+        ttk.Label(frame, text="服务器地址:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        custom_host_var = tk.StringVar(value=self.host_var.get())
+        host_entry = ttk.Entry(frame, textvariable=custom_host_var, width=30)
+        host_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
+        
+        ttk.Label(frame, text="端口:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        custom_port_var = tk.StringVar(value=self.port_var.get())
+        port_entry = ttk.Entry(frame, textvariable=custom_port_var, width=30)
+        port_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
+        
+        # 常用地址列表
+        ttk.Label(frame, text="常用地址:").grid(row=2, column=0, sticky=tk.W, pady=(20, 5))
+        
+        addresses_frame = ttk.Frame(frame)
+        addresses_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        common_addresses = [
+            ("本地服务器", "localhost", "8765"),
+            ("局域网服务器", "172.27.66.166", "8765"),
+            ("测试服务器", "192.168.1.100", "8765"),
+        ]
+        
+        for i, (name, host, port) in enumerate(common_addresses):
+            btn = ttk.Button(addresses_frame, text=name,
+                           command=lambda h=host, p=port: [custom_host_var.set(h), custom_port_var.set(p)])
+            btn.grid(row=i//2, column=i%2, padx=5, pady=2, sticky=tk.W)
+        
+        # 按钮
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=4, column=0, columnspan=2, pady=(20, 0))
+        
+        def apply_config():
+            self.set_server_config(custom_host_var.get(), custom_port_var.get())
+            dialog.destroy()
+        
+        ttk.Button(button_frame, text="应用", command=apply_config).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(button_frame, text="取消", command=dialog.destroy).pack(side=tk.LEFT)
+        
+        frame.columnconfigure(1, weight=1)
+        host_entry.focus()
+    
     def toggle_connection(self):
         """切换连接状态"""
         if not self.connected:
@@ -219,7 +299,8 @@ class ChatClient:
             await self._listen_for_messages()
             
         except Exception as e:
-            self.root.after(0, lambda: self._on_connection_error(str(e)))
+            error_msg = str(e)
+            self.root.after(0, lambda msg=error_msg: self._on_connection_error(msg))
     
     def _on_connected(self):
         """连接成功回调"""
@@ -243,7 +324,8 @@ class ChatClient:
         except websockets.exceptions.ConnectionClosed:
             self.root.after(0, self._on_disconnected)
         except Exception as e:
-            self.root.after(0, lambda: self._on_connection_error(str(e)))
+            error_msg = str(e)
+            self.root.after(0, lambda msg=error_msg: self._on_connection_error(msg))
     
     def _handle_message(self, data: dict):
         """处理服务器消息"""
@@ -325,7 +407,8 @@ class ChatClient:
                 }
                 await self.websocket.send(json.dumps(chat_message))
         except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("发送错误", f"发送消息失败: {e}"))
+            error_msg = str(e)
+            self.root.after(0, lambda msg=error_msg: messagebox.showerror("发送错误", f"发送消息失败: {msg}"))
     
     def disconnect_from_server(self):
         """断开服务器连接"""
