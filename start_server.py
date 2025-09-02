@@ -150,8 +150,13 @@ class ServerLauncher:
             messagebox.showerror("错误", "请输入主机地址")
             return
         
-        # 构建命令
-        cmd = ["python3", "chat_server.py", "--host", host, "--port", str(port)]
+        # 构建命令 - 使用虚拟环境中的Python
+        venv_python = os.path.join(os.path.dirname(__file__), "venv", "bin", "python3")
+        if os.path.exists(venv_python):
+            python_cmd = venv_python
+        else:
+            python_cmd = "python3"  # 回退到系统Python
+        cmd = [python_cmd, "chat_server.py", "--host", host, "--port", str(port)]
         
         if self.ssl_var.get():
             cert_file = self.cert_var.get().strip()
@@ -222,7 +227,13 @@ class ServerLauncher:
     def start_client(self):
         """启动客户端"""
         try:
-            subprocess.Popen(["python3", "chat_client.py"])
+            # 使用虚拟环境中的Python
+            venv_python = os.path.join(os.path.dirname(__file__), "venv", "bin", "python3")
+            if os.path.exists(venv_python):
+                python_cmd = venv_python
+            else:
+                python_cmd = "python3"  # 回退到系统Python
+            subprocess.Popen([python_cmd, "chat_client.py"])
             self.log_message("客户端已启动")
         except Exception as e:
             messagebox.showerror("启动错误", f"无法启动客户端: {e}")
