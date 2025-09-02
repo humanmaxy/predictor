@@ -9,6 +9,8 @@ from tkinter import ttk, messagebox, filedialog
 import subprocess
 import threading
 import os
+import sys
+import platform
 
 class ServerLauncher:
     def __init__(self):
@@ -18,6 +20,87 @@ class ServerLauncher:
         
         self.server_process = None
         self.create_widgets()
+        self.check_environment()
+    
+    def get_python_executable(self):
+        """获取正确的Python可执行文件路径（跨平台支持）"""
+        # 首先尝试虚拟环境中的Python
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        if platform.system() == "Windows":
+            # Windows系统路径 - 尝试多个可能的文件名
+            possible_paths = [
+                os.path.join(script_dir, "venv", "Scripts", "python.exe"),
+                os.path.join(script_dir, "venv", "Scripts", "python3.exe"),
+            ]
+        else:
+            # Linux/Mac系统路径
+            possible_paths = [
+                os.path.join(script_dir, "venv", "bin", "python3"),
+                os.path.join(script_dir, "venv", "bin", "python"),
+            ]
+        
+        # 检查虚拟环境中的Python
+        for venv_python in possible_paths:
+            if os.path.exists(venv_python):
+                return venv_python
+        
+        # 回退选项：尝试当前Python解释器
+        current_python = sys.executable
+        if current_python and os.path.exists(current_python):
+            return current_python
+        
+        # 最后回退：使用系统Python命令
+        if platform.system() == "Windows":
+            # Windows上尝试多个命令
+            for cmd in ["python", "python3", "py"]:
+                try:
+                    # 测试命令是否可用
+                    result = subprocess.run([cmd, "--version"], 
+                                          capture_output=True, text=True, timeout=5)
+                    if result.returncode == 0:
+                        return cmd
+                except (subprocess.TimeoutExpired, FileNotFoundError):
+                    continue
+            return "python"  # 默认回退
+        else:
+            return "python3"
+    
+    def check_environment(self):
+        """检查运行环境并显示信息"""
+        python_cmd = self.get_python_executable()
+        
+        # 显示环境信息
+        self.log_message(f"操作系统: {platform.system()} {platform.release()}")
+        self.log_message(f"Python路径: {python_cmd}")
+        
+        # 检查Python是否可用
+        try:
+            if os.path.exists(python_cmd):
+                result = subprocess.run([python_cmd, "--version"], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    version = result.stdout.strip() or result.stderr.strip()
+                    self.log_message(f"Python版本: {version}")
+                else:
+                    self.log_message(f"警告: Python命令执行失败")
+            else:
+                self.log_message(f"警告: Python可执行文件不存在: {python_cmd}")
+        except Exception as e:
+            self.log_message(f"警告: 无法检查Python版本: {e}")
+        
+        # 检查依赖包
+        try:
+            if os.path.exists(python_cmd):
+                result = subprocess.run([python_cmd, "-c", "import websockets; print('websockets版本:', websockets.__version__)"], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    self.log_message(result.stdout.strip())
+                else:
+                    self.log_message("警告: websockets包未安装或无法导入")
+                    self.log_message("请运行 setup_windows.bat 来安装依赖")
+        except Exception as e:
+            self.log_message(f"警告: 无法检查依赖包: {e}")
     
     def create_widgets(self):
         """创建界面组件"""
@@ -150,13 +233,10 @@ class ServerLauncher:
             messagebox.showerror("错误", "请输入主机地址")
             return
         
-        # 构建命令 - 使用虚拟环境中的Python
-        venv_python = os.path.join(os.path.dirname(__file__), "venv", "bin", "python3")
-        if os.path.exists(venv_python):
-            python_cmd = venv_python
-        else:
-            python_cmd = "python3"  # 回退到系统Python
-        cmd = [python_cmd, "chat_server.py", "--host", host, "--port", str(port)]
+        # 构建命令 - 使用跨平台的Python路径
+        python_cmd = self.get_python_executable()
+        server_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_server.py")
+        cmd = [python_cmd, server_script, "--host", host, "--port", str(port)]
         
         if self.ssl_var.get():
             cert_file = self.cert_var.get().strip()
@@ -177,12 +257,31 @@ class ServerLauncher:
             cmd.extend(["--ssl", "--cert", cert_file, "--key", key_file])
         
         try:
+            # 记录调试信息
+            self.log_message(f"使用Python路径: {python_cmd}")
+            self.log_message(f"服务器脚本路径: {server_script}")
+            self.log_message(f"执行命令: {' '.join(cmd)}")
+            
+            # 检查文件是否存在
+            if not os.path.exists(python_cmd):
+                error_msg = f"Python可执行文件不存在: {python_cmd}"
+                self.log_message(f"错误: {error_msg}")
+                messagebox.showerror("启动错误", error_msg)
+                return
+                
+            if not os.path.exists(server_script):
+                error_msg = f"服务器脚本不存在: {server_script}"
+                self.log_message(f"错误: {error_msg}")
+                messagebox.showerror("启动错误", error_msg)
+                return
+            
             self.server_process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,
-                bufsize=1
+                bufsize=1,
+                cwd=os.path.dirname(os.path.abspath(__file__))  # 设置工作目录
             )
             
             self.start_btn.config(state=tk.DISABLED)
@@ -195,8 +294,14 @@ class ServerLauncher:
             # 启动日志读取线程
             threading.Thread(target=self.read_server_output, daemon=True).start()
             
+        except FileNotFoundError as e:
+            error_msg = f"找不到文件: {e}. 请检查Python安装和虚拟环境设置。"
+            self.log_message(f"错误: {error_msg}")
+            messagebox.showerror("启动错误", error_msg)
         except Exception as e:
-            messagebox.showerror("启动错误", f"无法启动服务器: {e}")
+            error_msg = f"无法启动服务器: {e}"
+            self.log_message(f"错误: {error_msg}")
+            messagebox.showerror("启动错误", error_msg)
     
     def read_server_output(self):
         """读取服务器输出"""
@@ -227,16 +332,38 @@ class ServerLauncher:
     def start_client(self):
         """启动客户端"""
         try:
-            # 使用虚拟环境中的Python
-            venv_python = os.path.join(os.path.dirname(__file__), "venv", "bin", "python3")
-            if os.path.exists(venv_python):
-                python_cmd = venv_python
-            else:
-                python_cmd = "python3"  # 回退到系统Python
-            subprocess.Popen([python_cmd, "chat_client.py"])
+            # 使用跨平台的Python路径
+            python_cmd = self.get_python_executable()
+            client_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_client.py")
+            
+            # 记录调试信息
+            self.log_message(f"启动客户端 - Python路径: {python_cmd}")
+            self.log_message(f"客户端脚本路径: {client_script}")
+            
+            # 检查文件是否存在
+            if not os.path.exists(python_cmd):
+                error_msg = f"Python可执行文件不存在: {python_cmd}"
+                self.log_message(f"错误: {error_msg}")
+                messagebox.showerror("启动错误", error_msg)
+                return
+                
+            if not os.path.exists(client_script):
+                error_msg = f"客户端脚本不存在: {client_script}"
+                self.log_message(f"错误: {error_msg}")
+                messagebox.showerror("启动错误", error_msg)
+                return
+            
+            subprocess.Popen([python_cmd, client_script], 
+                           cwd=os.path.dirname(os.path.abspath(__file__)))
             self.log_message("客户端已启动")
+        except FileNotFoundError as e:
+            error_msg = f"找不到文件: {e}. 请检查Python安装。"
+            self.log_message(f"错误: {error_msg}")
+            messagebox.showerror("启动错误", error_msg)
         except Exception as e:
-            messagebox.showerror("启动错误", f"无法启动客户端: {e}")
+            error_msg = f"无法启动客户端: {e}"
+            self.log_message(f"错误: {error_msg}")
+            messagebox.showerror("启动错误", error_msg)
     
     def on_closing(self):
         """窗口关闭事件"""
