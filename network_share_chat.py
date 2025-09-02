@@ -13,9 +13,13 @@ import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import ttk, messagebox, scrolledtext, filedialog
 import shutil
 import glob
+
+# 导入加密和文件传输工具
+from encryption_utils import ChatEncryption
+from file_transfer_utils import FileTransferManager
 
 class NetworkShareChatManager:
     """网络共享目录聊天管理器"""
@@ -29,6 +33,9 @@ class NetworkShareChatManager:
         # 消息缓存
         self.message_cache = set()  # 已处理的消息文件
         self.last_scan_time = datetime.now()
+        
+        # 文件传输管理器
+        self.file_manager = FileTransferManager(share_path)
         
         # 初始化目录结构
         self._init_directories()
@@ -70,7 +77,7 @@ class NetworkShareChatManager:
             print(f"目录访问测试失败: {e}")
             return False
     
-    def send_public_message(self, user_id: str, username: str, message: str):
+    def send_public_message(self, user_id: str, username: str, message: str, file_info: dict = None):
         """发送群聊消息"""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
@@ -84,16 +91,26 @@ class NetworkShareChatManager:
                 "timestamp": datetime.now().isoformat()
             }
             
+            # 如果有文件信息，添加到消息中
+            if file_info:
+                message_data["file_info"] = file_info
+                message_data["message_type"] = "file"
+            else:
+                message_data["message_type"] = "text"
+            
+            # 加密消息数据
+            encrypted_data = ChatEncryption.encrypt_message(message_data)
+            
             file_path = self.public_dir / filename
             with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(message_data, f, ensure_ascii=False, indent=2)
+                f.write(encrypted_data)
             
             return True
         except Exception as e:
             print(f"发送群聊消息失败: {e}")
             return False
     
-    def send_private_message(self, sender_id: str, sender_name: str, target_id: str, message: str):
+    def send_private_message(self, sender_id: str, sender_name: str, target_id: str, message: str, file_info: dict = None):
         """发送私聊消息"""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
@@ -113,9 +130,19 @@ class NetworkShareChatManager:
                 "timestamp": datetime.now().isoformat()
             }
             
+            # 如果有文件信息，添加到消息中
+            if file_info:
+                message_data["file_info"] = file_info
+                message_data["message_type"] = "file"
+            else:
+                message_data["message_type"] = "text"
+            
+            # 加密消息数据
+            encrypted_data = ChatEncryption.encrypt_message(message_data)
+            
             file_path = private_chat_dir / filename
             with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(message_data, f, ensure_ascii=False, indent=2)
+                f.write(encrypted_data)
             
             return True
         except Exception as e:
@@ -182,13 +209,21 @@ class NetworkShareChatManager:
                 
                 try:
                     with open(file_path, 'r', encoding='utf-8') as f:
-                        message_data = json.load(f)
+                        file_content = f.read().strip()
                     
-                    message_data['_filename'] = filename
-                    message_data['_file_path'] = str(file_path)
+                    # 尝试解密消息
+                    if ChatEncryption.is_encrypted_data(file_content):
+                        message_data = ChatEncryption.decrypt_message(file_content)
+                    else:
+                        # 兼容未加密的旧消息
+                        message_data = json.loads(file_content)
                     
-                    messages.append(message_data)
-                    self.message_cache.add(filename)
+                    if message_data:  # 解密成功
+                        message_data['_filename'] = filename
+                        message_data['_file_path'] = str(file_path)
+                        
+                        messages.append(message_data)
+                        self.message_cache.add(filename)
                     
                 except Exception as e:
                     print(f"读取消息文件失败 {file_path}: {e}")
@@ -260,6 +295,18 @@ class NetworkShareChatManager:
         except Exception as e:
             print(f"清理消息失败: {e}")
             return 0
+    
+    def upload_file(self, file_path: str, user_id: str, username: str) -> dict:
+        """上传文件"""
+        return self.file_manager.upload_file(file_path, user_id, username)
+    
+    def download_file(self, file_info: dict, local_dir: str) -> bool:
+        """下载文件"""
+        return self.file_manager.download_file(file_info, local_dir)
+    
+    def get_file_storage_stats(self) -> dict:
+        """获取文件存储统计"""
+        return self.file_manager.get_storage_stats()
 
 class NetworkShareChatClient:
     """基于网络共享目录的聊天客户端"""
@@ -382,6 +429,16 @@ class NetworkShareChatClient:
         self.send_btn = ttk.Button(input_frame, text="发送", command=self.send_message)
         self.send_btn.grid(row=0, column=1)
         
+        # 文件传输按钮
+        file_btn_frame = ttk.Frame(input_frame)
+        file_btn_frame.grid(row=0, column=2, padx=(5, 0))
+        
+        self.file_btn = ttk.Button(file_btn_frame, text="📎 文件", command=self.send_file)
+        self.file_btn.pack(side=tk.LEFT, padx=(0, 2))
+        
+        self.image_btn = ttk.Button(file_btn_frame, text="🖼️ 图片", command=self.send_image)
+        self.image_btn.pack(side=tk.LEFT)
+        
         # 初始状态设置
         self.set_chat_state(False)
         
@@ -437,6 +494,8 @@ class NetworkShareChatClient:
         state = tk.NORMAL if enabled else tk.DISABLED
         self.message_entry.config(state=state)
         self.send_btn.config(state=state)
+        self.file_btn.config(state=state)
+        self.image_btn.config(state=state)
     
     def toggle_connection(self):
         """切换连接状态"""
@@ -573,11 +632,19 @@ class NetworkShareChatClient:
             username = message_data.get('username', '')
             user_id = message_data.get('user_id', '')
             message = message_data.get('message', '')
+            message_type = message_data.get('message_type', 'text')
             
-            if user_id == self.user_id:
-                self.add_chat_message(f"[{time_str}] 我: {message}")
+            if message_type == 'file':
+                file_info = message_data.get('file_info', {})
+                if user_id == self.user_id:
+                    self.add_file_message(f"[{time_str}] 我", file_info, is_public=True)
+                else:
+                    self.add_file_message(f"[{time_str}] {username}", file_info, is_public=True)
             else:
-                self.add_chat_message(f"[{time_str}] {username}: {message}")
+                if user_id == self.user_id:
+                    self.add_chat_message(f"[{time_str}] 我: {message}")
+                else:
+                    self.add_chat_message(f"[{time_str}] {username}: {message}")
         
         elif msg_type == 'private':
             # 私聊消息
@@ -602,7 +669,7 @@ class NetworkShareChatClient:
                 return
             
             # 在私聊窗口显示消息
-            self.show_private_message(chat_partner_id, chat_partner_name, message_text)
+            self.show_private_message(chat_partner_id, chat_partner_name, message_text, message_data)
     
     def _update_online_users(self, users: list):
         """更新在线用户列表"""
@@ -768,6 +835,152 @@ class NetworkShareChatClient:
                 self.add_system_message(f"清理完成，删除了 {deleted_count} 条旧消息")
             except Exception as e:
                 messagebox.showerror("清理错误", f"清理失败: {str(e)}")
+    
+    def send_file(self):
+        """发送文件"""
+        if not self.connected:
+            messagebox.showwarning("未连接", "请先连接到聊天室")
+            return
+        
+        file_path = filedialog.askopenfilename(
+            title="选择要发送的文件",
+            filetypes=[
+                ("所有支持的文件", "*.txt;*.doc;*.docx;*.pdf;*.xls;*.xlsx;*.ppt;*.pptx;*.zip;*.rar;*.7z;*.tar;*.gz;*.mp3;*.mp4;*.avi;*.mov"),
+                ("文档文件", "*.txt;*.doc;*.docx;*.pdf"),
+                ("表格文件", "*.xls;*.xlsx"),
+                ("演示文件", "*.ppt;*.pptx"),
+                ("压缩文件", "*.zip;*.rar;*.7z;*.tar;*.gz"),
+                ("媒体文件", "*.mp3;*.mp4;*.avi;*.mov"),
+                ("所有文件", "*.*")
+            ]
+        )
+        
+        if file_path:
+            self._upload_and_send_file(file_path, "file")
+    
+    def send_image(self):
+        """发送图片"""
+        if not self.connected:
+            messagebox.showwarning("未连接", "请先连接到聊天室")
+            return
+        
+        image_path = filedialog.askopenfilename(
+            title="选择要发送的图片",
+            filetypes=[
+                ("图片文件", "*.jpg;*.jpeg;*.png;*.gif;*.bmp;*.webp"),
+                ("JPEG图片", "*.jpg;*.jpeg"),
+                ("PNG图片", "*.png"),
+                ("GIF图片", "*.gif"),
+                ("BMP图片", "*.bmp"),
+                ("WebP图片", "*.webp"),
+                ("所有文件", "*.*")
+            ]
+        )
+        
+        if image_path:
+            self._upload_and_send_file(image_path, "image")
+    
+    def _upload_and_send_file(self, file_path: str, file_type: str):
+        """上传并发送文件"""
+        try:
+            # 显示上传进度
+            self.add_system_message(f"正在上传{file_type}...")
+            self.root.update()
+            
+            # 上传文件
+            file_info = self.chat_manager.upload_file(file_path, self.user_id, self.username)
+            
+            if file_info:
+                # 发送包含文件信息的消息
+                file_name = file_info['original_name']
+                message = f"发送了{file_type}: {file_name}"
+                
+                success = self.chat_manager.send_public_message(
+                    self.user_id, self.username, message, file_info
+                )
+                
+                if success:
+                    self.add_system_message(f"{file_type}发送成功: {file_name}")
+                else:
+                    self.add_system_message(f"{file_type}发送失败")
+            else:
+                self.add_system_message(f"{file_type}上传失败")
+                
+        except Exception as e:
+            messagebox.showerror("发送错误", f"发送{file_type}失败: {str(e)}")
+    
+    def add_file_message(self, sender: str, file_info: dict, is_public: bool = True):
+        """添加文件消息"""
+        try:
+            file_name = file_info.get('original_name', '未知文件')
+            file_size = file_info.get('file_size', 0)
+            file_type = file_info.get('file_type', 'file')
+            
+            # 格式化文件大小
+            if file_size < 1024:
+                size_str = f"{file_size} B"
+            elif file_size < 1024 * 1024:
+                size_str = f"{file_size / 1024:.1f} KB"
+            else:
+                size_str = f"{file_size / (1024 * 1024):.1f} MB"
+            
+            # 创建文件消息
+            if file_type == 'image':
+                icon = "🖼️"
+            else:
+                icon = "📎"
+            
+            message_text = f"{sender} {icon} {file_name} ({size_str})"
+            
+            if is_public:
+                self.add_chat_message(message_text)
+                # 添加下载按钮（简化版本，显示提示）
+                self.add_chat_message(f"    💡 双击可下载文件")
+            
+        except Exception as e:
+            print(f"添加文件消息失败: {e}")
+    
+    def show_private_message(self, chat_partner_id: str, chat_partner_name: str, message_text: str, message_data: dict = None):
+        """在私聊窗口显示消息"""
+        # 如果私聊窗口不存在，创建它
+        if chat_partner_id not in self.private_chat_windows:
+            self.open_private_chat_window(chat_partner_id, chat_partner_name)
+        
+        # 在私聊窗口显示消息
+        window = self.private_chat_windows[chat_partner_id]
+        if hasattr(window, 'message_display'):
+            window.message_display.config(state=tk.NORMAL)
+            
+            # 检查是否是文件消息
+            if message_data and message_data.get('message_type') == 'file':
+                file_info = message_data.get('file_info', {})
+                file_name = file_info.get('original_name', '未知文件')
+                file_size = file_info.get('file_size', 0)
+                file_type = file_info.get('file_type', 'file')
+                
+                # 格式化文件大小
+                if file_size < 1024:
+                    size_str = f"{file_size} B"
+                elif file_size < 1024 * 1024:
+                    size_str = f"{file_size / 1024:.1f} KB"
+                else:
+                    size_str = f"{file_size / (1024 * 1024):.1f} MB"
+                
+                icon = "🖼️" if file_type == 'image' else "📎"
+                window.message_display.insert(tk.END, f"{message_text.split(':')[0]}: {icon} {file_name} ({size_str})\n")
+                window.message_display.insert(tk.END, f"    💡 双击可下载文件\n")
+            else:
+                window.message_display.insert(tk.END, f"{message_text}\n")
+            
+            window.message_display.config(state=tk.DISABLED)
+            window.message_display.see(tk.END)
+            
+            # 如果窗口不在前台，闪烁提醒
+            if not window.focus_displayof():
+                window.bell()
+                original_title = window.title()
+                window.title(f"[新消息] {original_title}")
+                window.after(3000, lambda: window.title(original_title))
     
     def on_closing(self):
         """窗口关闭事件"""
