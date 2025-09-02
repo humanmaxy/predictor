@@ -72,7 +72,7 @@ class ChatServer:
                 return_exceptions=True
             )
     
-    async def handle_client(self, websocket, path):
+    async def handle_client(self, websocket):
         """处理客户端连接"""
         user_id = None
         try:
