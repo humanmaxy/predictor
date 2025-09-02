@@ -79,7 +79,7 @@ class ChatClient:
         preset_frame = ttk.Frame(config_frame)
         preset_frame.grid(row=2, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=(10, 0))
         
-        ttk.Label(preset_frame, text="快速连接:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
+        ttk.Label(preset_frame, text="连接模式:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
         
         local_btn = ttk.Button(preset_frame, text="本地", 
                               command=lambda: self.set_server_config("localhost", "8765"))
@@ -91,7 +91,12 @@ class ChatClient:
         
         custom_btn = ttk.Button(preset_frame, text="自定义", 
                                command=self.show_custom_config)
-        custom_btn.grid(row=0, column=3)
+        custom_btn.grid(row=0, column=3, padx=(0, 5))
+        
+        cos_btn = ttk.Button(preset_frame, text="COS云聊天", 
+                            command=self.start_cos_chat)
+        cos_btn.grid(row=0, column=4, padx=(0, 5))
+        cos_btn.config(style="Accent.TButton")
         
         # 用户信息区域
         user_frame = ttk.LabelFrame(main_frame, text="用户信息", padding="5")
@@ -647,6 +652,19 @@ class ChatClient:
                 window.message_display.insert(tk.END, f"[{timestamp}] [系统] {message}\n")
                 window.message_display.config(state=tk.DISABLED)
                 window.message_display.see(tk.END)
+    
+    def start_cos_chat(self):
+        """启动COS云聊天"""
+        try:
+            import subprocess
+            import sys
+            
+            # 启动COS聊天客户端
+            subprocess.Popen([sys.executable, "cos_chat_client.py"])
+            self.add_system_message("正在启动COS云聊天客户端...")
+            
+        except Exception as e:
+            messagebox.showerror("启动错误", f"无法启动COS聊天客户端: {str(e)}")
 
 def main():
     """主函数"""
