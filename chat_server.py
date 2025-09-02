@@ -21,6 +21,7 @@ class ChatServer:
     def __init__(self):
         self.clients: Dict[str, websockets.WebSocketServerProtocol] = {}
         self.user_ids: Set[str] = set()
+        self.user_info: Dict[str, str] = {}  # user_id -> username 映射
         
     async def register_client(self, websocket, user_id: str, username: str):
         """注册新客户端"""
@@ -33,6 +34,7 @@ class ChatServer:
             
         self.clients[user_id] = websocket
         self.user_ids.add(user_id)
+        self.user_info[user_id] = username
         
         # 通知所有客户端有新用户加入
         await self.broadcast_message({
@@ -51,6 +53,8 @@ class ChatServer:
         if user_id in self.clients:
             del self.clients[user_id]
             self.user_ids.remove(user_id)
+            if user_id in self.user_info:
+                del self.user_info[user_id]
             
             # 通知所有客户端用户离开
             await self.broadcast_message({
@@ -71,6 +75,20 @@ class ChatServer:
                 *[client.send(json.dumps(message)) for client in clients_copy],
                 return_exceptions=True
             )
+    
+    async def send_private_message(self, sender_id: str, target_id: str, message: dict):
+        """发送私聊消息给特定用户"""
+        if target_id in self.clients:
+            try:
+                await self.clients[target_id].send(json.dumps(message))
+                # 同时发送给发送者确认
+                if sender_id in self.clients and sender_id != target_id:
+                    await self.clients[sender_id].send(json.dumps(message))
+                return True
+            except Exception as e:
+                logger.error(f"发送私聊消息失败: {e}")
+                return False
+        return False
     
     async def handle_client(self, websocket):
         """处理客户端连接"""
@@ -114,6 +132,60 @@ class ChatServer:
                                 "type": "error",
                                 "message": "请先加入聊天室"
                             }))
+                    
+                    elif message_type == "private_chat":
+                        if user_id and user_id in self.clients:
+                            target_user_id = data.get("target_user_id")
+                            if not target_user_id:
+                                await websocket.send(json.dumps({
+                                    "type": "error",
+                                    "message": "缺少目标用户ID"
+                                }))
+                                continue
+                            
+                            if target_user_id not in self.clients:
+                                await websocket.send(json.dumps({
+                                    "type": "error", 
+                                    "message": f"用户 {target_user_id} 不在线"
+                                }))
+                                continue
+                            
+                            private_message = {
+                                "type": "private_chat",
+                                "user_id": user_id,
+                                "username": data.get("username", ""),
+                                "target_user_id": target_user_id,
+                                "message": data.get("message", ""),
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            
+                            success = await self.send_private_message(user_id, target_user_id, private_message)
+                            if not success:
+                                await websocket.send(json.dumps({
+                                    "type": "error",
+                                    "message": "发送私聊消息失败"
+                                }))
+                        else:
+                            await websocket.send(json.dumps({
+                                "type": "error",
+                                "message": "请先加入聊天室"
+                            }))
+                    
+                    elif message_type == "get_user_info":
+                        if user_id and user_id in self.clients:
+                            target_user_id = data.get("target_user_id")
+                            if target_user_id in self.user_info:
+                                await websocket.send(json.dumps({
+                                    "type": "user_info",
+                                    "user_id": target_user_id,
+                                    "username": self.user_info[target_user_id],
+                                    "online": target_user_id in self.clients
+                                }))
+                            else:
+                                await websocket.send(json.dumps({
+                                    "type": "error",
+                                    "message": "用户不存在"
+                                }))
                     
                     elif message_type == "ping":
                         await websocket.send(json.dumps({"type": "pong"}))

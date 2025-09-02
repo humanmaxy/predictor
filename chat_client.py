@@ -29,6 +29,10 @@ class ChatClient:
         self.server_port = 8765
         self.use_ssl = False
         
+        # 私聊相关变量
+        self.private_chat_windows = {}  # user_id -> 私聊窗口
+        self.online_users = {}  # user_id -> username 映射
+        
         # 创建界面
         self.create_widgets()
         
@@ -125,8 +129,15 @@ class ChatClient:
         users_frame = ttk.LabelFrame(chat_frame, text="在线用户", padding="5")
         users_frame.grid(row=0, column=1, sticky=(tk.N, tk.S), padx=(10, 0))
         
+        # 添加使用提示
+        tip_label = ttk.Label(users_frame, text="双击用户名开始私聊", font=("Arial", 8))
+        tip_label.pack(pady=(0, 5))
+        
         self.users_listbox = tk.Listbox(users_frame, width=20, height=15)
         self.users_listbox.pack(fill=tk.BOTH, expand=True)
+        
+        # 绑定双击事件开启私聊
+        self.users_listbox.bind('<Double-1>', self.start_private_chat)
         
         # 消息输入区域
         input_frame = ttk.Frame(chat_frame)
@@ -354,13 +365,55 @@ class ChatClient:
         
         elif message_type == "user_joined":
             username = data.get("username", "")
+            user_id = data.get("user_id", "")
             self.add_system_message(f"{username} 加入了聊天室")
             self.update_user_list(data.get("online_users", []))
+            # 更新用户信息映射
+            if user_id:
+                self.online_users[user_id] = username
         
         elif message_type == "user_left":
             user_id = data.get("user_id", "")
-            self.add_system_message(f"用户 {user_id} 离开了聊天室")
+            if user_id in self.online_users:
+                username = self.online_users[user_id]
+                self.add_system_message(f"{username} 离开了聊天室")
+                del self.online_users[user_id]
+            else:
+                self.add_system_message(f"用户 {user_id} 离开了聊天室")
             self.update_user_list(data.get("online_users", []))
+        
+        elif message_type == "private_chat":
+            sender_id = data.get("user_id", "")
+            sender_name = data.get("username", "")
+            target_id = data.get("target_user_id", "")
+            message = data.get("message", "")
+            timestamp = data.get("timestamp", "")
+            
+            # 格式化时间
+            try:
+                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                time_str = dt.strftime("%H:%M:%S")
+            except:
+                time_str = datetime.now().strftime("%H:%M:%S")
+            
+            # 确定聊天对象
+            if sender_id == self.user_id:
+                # 自己发送的消息，聊天对象是target_id
+                chat_partner_id = target_id
+                chat_partner_name = self.online_users.get(target_id, target_id)
+                message_text = f"[{time_str}] 我: {message}"
+            else:
+                # 收到的私聊消息，聊天对象是sender_id  
+                chat_partner_id = sender_id
+                chat_partner_name = sender_name
+                message_text = f"[{time_str}] {sender_name}: {message}"
+            
+            # 在私聊窗口显示消息
+            self.show_private_message(chat_partner_id, chat_partner_name, message_text)
+        
+        elif message_type == "user_info":
+            # 用户信息响应，暂时不处理
+            pass
     
     def add_system_message(self, message: str):
         """添加系统消息"""
@@ -380,8 +433,11 @@ class ChatClient:
     def update_user_list(self, users: list):
         """更新在线用户列表"""
         self.users_listbox.delete(0, tk.END)
-        for user in users:
-            self.users_listbox.insert(tk.END, user)
+        for user_id in users:
+            if user_id != self.user_id:  # 不显示自己
+                username = self.online_users.get(user_id, user_id)
+                display_text = f"{username} ({user_id})" if username != user_id else user_id
+                self.users_listbox.insert(tk.END, display_text)
     
     def send_message(self, event=None):
         """发送消息"""
@@ -456,6 +512,141 @@ class ChatClient:
         self.username_var.trace('w', lambda *args: None)
         
         self.root.mainloop()
+    
+    def start_private_chat(self, event=None):
+        """开始私聊（双击用户列表触发）"""
+        selection = self.users_listbox.curselection()
+        if not selection:
+            return
+        
+        selected_text = self.users_listbox.get(selection[0])
+        # 解析用户ID（格式：username (user_id) 或 user_id）
+        if '(' in selected_text and ')' in selected_text:
+            user_id = selected_text.split('(')[-1].split(')')[0]
+        else:
+            user_id = selected_text
+        
+        username = self.online_users.get(user_id, user_id)
+        self.open_private_chat_window(user_id, username)
+    
+    def open_private_chat_window(self, target_user_id: str, target_username: str):
+        """打开私聊窗口"""
+        if target_user_id in self.private_chat_windows:
+            # 如果窗口已存在，则显示到前台
+            self.private_chat_windows[target_user_id].lift()
+            self.private_chat_windows[target_user_id].focus()
+            return
+        
+        # 创建新的私聊窗口
+        private_window = tk.Toplevel(self.root)
+        private_window.title(f"私聊 - {target_username}")
+        private_window.geometry("500x400")
+        
+        # 创建私聊界面
+        frame = ttk.Frame(private_window, padding="10")
+        frame.pack(fill=tk.BOTH, expand=True)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        
+        # 消息显示区域
+        message_display = scrolledtext.ScrolledText(frame, height=15, state=tk.DISABLED)
+        message_display.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        
+        # 消息输入区域
+        input_frame = ttk.Frame(frame)
+        input_frame.grid(row=1, column=0, sticky=(tk.W, tk.E))
+        input_frame.columnconfigure(0, weight=1)
+        
+        message_var = tk.StringVar()
+        message_entry = ttk.Entry(input_frame, textvariable=message_var)
+        message_entry.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 10))
+        
+        def send_private_message(event=None):
+            message = message_var.get().strip()
+            if message and self.connected:
+                self.send_private_message_to_server(target_user_id, message)
+                message_var.set("")
+        
+        message_entry.bind('<Return>', send_private_message)
+        
+        send_btn = ttk.Button(input_frame, text="发送", command=send_private_message)
+        send_btn.grid(row=0, column=1)
+        
+        # 存储窗口引用和消息显示组件
+        self.private_chat_windows[target_user_id] = private_window
+        private_window.message_display = message_display
+        private_window.target_user_id = target_user_id
+        private_window.target_username = target_username
+        
+        # 窗口关闭事件
+        def on_close():
+            if target_user_id in self.private_chat_windows:
+                del self.private_chat_windows[target_user_id]
+            private_window.destroy()
+        
+        private_window.protocol("WM_DELETE_WINDOW", on_close)
+        
+        # 添加欢迎消息
+        self.add_private_message(target_user_id, f"开始与 {target_username} 的私聊")
+        
+        message_entry.focus()
+    
+    def send_private_message_to_server(self, target_user_id: str, message: str):
+        """发送私聊消息到服务器"""
+        if self.loop:
+            asyncio.run_coroutine_threadsafe(
+                self._send_private_message(target_user_id, message), 
+                self.loop
+            )
+    
+    async def _send_private_message(self, target_user_id: str, message: str):
+        """异步发送私聊消息"""
+        try:
+            if self.websocket:
+                private_message = {
+                    "type": "private_chat",
+                    "user_id": self.user_id,
+                    "username": self.username,
+                    "target_user_id": target_user_id,
+                    "message": message
+                }
+                await self.websocket.send(json.dumps(private_message))
+        except Exception as e:
+            error_msg = str(e)
+            self.root.after(0, lambda msg=error_msg: messagebox.showerror("发送错误", f"发送私聊消息失败: {msg}"))
+    
+    def show_private_message(self, chat_partner_id: str, chat_partner_name: str, message_text: str):
+        """在私聊窗口显示消息"""
+        # 如果私聊窗口不存在，创建它
+        if chat_partner_id not in self.private_chat_windows:
+            self.open_private_chat_window(chat_partner_id, chat_partner_name)
+        
+        # 在私聊窗口显示消息
+        window = self.private_chat_windows[chat_partner_id]
+        if hasattr(window, 'message_display'):
+            window.message_display.config(state=tk.NORMAL)
+            window.message_display.insert(tk.END, f"{message_text}\n")
+            window.message_display.config(state=tk.DISABLED)
+            window.message_display.see(tk.END)
+            
+            # 如果窗口不在前台，闪烁提醒
+            if not window.focus_displayof():
+                window.bell()  # 系统提示音
+                original_title = window.title()
+                window.title(f"[新消息] {original_title}")
+                # 3秒后恢复标题
+                window.after(3000, lambda: window.title(original_title))
+    
+    def add_private_message(self, target_user_id: str, message: str):
+        """添加私聊系统消息"""
+        if target_user_id in self.private_chat_windows:
+            window = self.private_chat_windows[target_user_id]
+            if hasattr(window, 'message_display'):
+                window.message_display.config(state=tk.NORMAL)
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                window.message_display.insert(tk.END, f"[{timestamp}] [系统] {message}\n")
+                window.message_display.config(state=tk.DISABLED)
+                window.message_display.see(tk.END)
 
 def main():
     """主函数"""
