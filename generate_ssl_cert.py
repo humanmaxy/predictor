@@ -8,10 +8,8 @@ import subprocess
 import os
 import sys
 
-def generate_ssl_certificate():
+def generate_ssl_certificate(cert_file="server.crt", key_file="server.key"):
     """生成自签名SSL证书"""
-    cert_file = "server.crt"
-    key_file = "server.key"
     
     # 检查是否已存在证书文件
     if os.path.exists(cert_file) or os.path.exists(key_file):

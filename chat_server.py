@@ -206,9 +206,27 @@ class ChatServer:
 
 def create_ssl_context(cert_file: str, key_file: str):
     """创建SSL上下文"""
-    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    ssl_context.load_cert_chain(cert_file, key_file)
-    return ssl_context
+    import os
+    
+    # 检查证书文件是否存在
+    if not os.path.exists(cert_file):
+        raise FileNotFoundError(f"SSL证书文件不存在: {cert_file}")
+    if not os.path.exists(key_file):
+        raise FileNotFoundError(f"SSL私钥文件不存在: {key_file}")
+    
+    try:
+        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ssl_context.load_cert_chain(cert_file, key_file)
+        logger.info(f"SSL证书加载成功: {cert_file}")
+        return ssl_context
+    except ssl.SSLError as e:
+        logger.error(f"SSL证书加载失败: {e}")
+        logger.error("可能的原因:")
+        logger.error("1. 证书文件格式不正确（需要PEM格式）")
+        logger.error("2. 证书和私钥不匹配")
+        logger.error("3. 证书文件损坏")
+        logger.error("4. 私钥文件需要密码但未提供")
+        raise
 
 async def main():
     parser = argparse.ArgumentParser(description='聊天服务器')
@@ -227,9 +245,25 @@ async def main():
     if args.ssl:
         if not args.cert or not args.key:
             logger.error("使用HTTPS时需要提供证书和私钥文件")
+            logger.error("使用方法: python3 chat_server.py --ssl --cert 证书文件.pem --key 私钥文件.pem")
             return
-        ssl_context = create_ssl_context(args.cert, args.key)
-        protocol = "wss"
+        
+        try:
+            ssl_context = create_ssl_context(args.cert, args.key)
+            protocol = "wss"
+        except FileNotFoundError as e:
+            logger.error(f"文件不存在: {e}")
+            logger.error("请检查证书和私钥文件路径是否正确")
+            return
+        except ssl.SSLError as e:
+            logger.error("SSL证书加载失败，请尝试以下解决方案:")
+            logger.error("1. 使用HTTP模式（不使用--ssl参数）: python3 chat_server.py --host 0.0.0.0 --port 11900")
+            logger.error("2. 重新生成SSL证书: python3 generate_ssl_cert.py")
+            logger.error("3. 检查证书文件格式是否为PEM格式")
+            return
+        except Exception as e:
+            logger.error(f"SSL配置失败: {e}")
+            return
     else:
         protocol = "ws"
     
