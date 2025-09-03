@@ -72,14 +72,27 @@ class RemoteAssistanceLauncher:
                                     foreground="red")
                 dep_label.pack(anchor=tk.W)
             
-            install_btn = ttk.Button(deps_frame, text="🔧 安装缺失依赖", 
+            # 按钮框架
+            btn_frame = ttk.Frame(deps_frame)
+            btn_frame.pack(pady=(10, 0))
+            
+            install_btn = ttk.Button(btn_frame, text="🔧 安装缺失依赖", 
                                    command=self.install_dependencies)
-            install_btn.pack(pady=(10, 0))
+            install_btn.pack(side=tk.LEFT, padx=(0, 10))
+            
+            fix_btn = ttk.Button(btn_frame, text="🔧 修复PyAutoGUI", 
+                               command=self.fix_pyautogui)
+            fix_btn.pack(side=tk.LEFT)
         else:
             # 所有依赖都正常
             ok_label = ttk.Label(deps_frame, text="✅ 所有依赖都已安装，可以使用完整功能", 
                                foreground="green", font=("Arial", 10, "bold"))
             ok_label.pack()
+            
+            # 即使依赖正常也提供修复选项
+            fix_btn = ttk.Button(deps_frame, text="🔧 诊断PyAutoGUI", 
+                               command=self.fix_pyautogui)
+            fix_btn.pack(pady=(5, 0))
         
         # 启动选项
         options_frame = ttk.LabelFrame(main_frame, text="启动选项", padding=10)
@@ -209,6 +222,49 @@ class RemoteAssistanceLauncher:
                 messagebox.showerror("安装失败", f"依赖安装失败: {e}")
         
         threading.Thread(target=run_install, daemon=True).start()
+    
+    def fix_pyautogui(self):
+        """修复PyAutoGUI问题"""
+        try:
+            import subprocess
+            import sys
+            
+            messagebox.showinfo("修复PyAutoGUI", "正在诊断和修复PyAutoGUI问题，请稍候...")
+            
+            def run_fix():
+                try:
+                    # 运行修复脚本
+                    result = subprocess.run([sys.executable, "fix_pyautogui.py"], 
+                                          capture_output=True, text=True, cwd=os.path.dirname(__file__))
+                    
+                    if "修复成功" in result.stdout or "SUCCESS" in result.stdout:
+                        messagebox.showinfo("修复完成", "PyAutoGUI修复成功！请重新启动程序测试。")
+                    else:
+                        # 显示详细结果
+                        result_window = tk.Toplevel(self.root)
+                        result_window.title("修复结果")
+                        result_window.geometry("700x500")
+                        
+                        text_widget = tk.Text(result_window, wrap=tk.WORD)
+                        scrollbar = ttk.Scrollbar(result_window, orient=tk.VERTICAL, command=text_widget.yview)
+                        text_widget.configure(yscrollcommand=scrollbar.set)
+                        
+                        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+                        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+                        
+                        text_widget.insert(tk.END, "修复输出:\n")
+                        text_widget.insert(tk.END, result.stdout)
+                        if result.stderr:
+                            text_widget.insert(tk.END, "\n错误信息:\n")
+                            text_widget.insert(tk.END, result.stderr)
+                    
+                except Exception as e:
+                    messagebox.showerror("修复失败", f"修复过程出错: {e}")
+            
+            threading.Thread(target=run_fix, daemon=True).start()
+            
+        except Exception as e:
+            messagebox.showerror("修复失败", f"无法启动修复: {e}")
     
     def launch_full_client(self):
         """启动完整聊天客户端"""

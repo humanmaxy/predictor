@@ -21,19 +21,38 @@ import socket
 import struct
 
 # 尝试导入鼠标键盘控制库
-try:
-    import pyautogui
-    PYAUTOGUI_AVAILABLE = True
-    # 禁用pyautogui的故障保护
-    pyautogui.FAILSAFE = False
-    print(f"✅ PyAutoGUI已加载，版本: {getattr(pyautogui, '__version__', '未知')}")
-except ImportError as e:
-    PYAUTOGUI_AVAILABLE = False
-    print(f"警告: PyAutoGUI导入失败 ({e})，远程控制功能将受限")
-    print("请运行: pip install pyautogui")
-except Exception as e:
-    PYAUTOGUI_AVAILABLE = False
-    print(f"警告: PyAutoGUI初始化失败 ({e})，远程控制功能将受限")
+PYAUTOGUI_AVAILABLE = False
+pyautogui = None
+
+def try_import_pyautogui():
+    """尝试导入PyAutoGUI"""
+    global PYAUTOGUI_AVAILABLE, pyautogui
+    
+    try:
+        import pyautogui as pg
+        pyautogui = pg
+        PYAUTOGUI_AVAILABLE = True
+        # 禁用pyautogui的故障保护
+        pyautogui.FAILSAFE = False
+        print(f"✅ PyAutoGUI已加载，版本: {getattr(pyautogui, '__version__', '未知')}")
+        return True
+    except ImportError as e:
+        print(f"❌ PyAutoGUI导入失败: {e}")
+        print("解决方案:")
+        print("  1. 运行: python fix_pyautogui.py")
+        print("  2. 或手动安装: pip install pyautogui")
+        print("  3. 屏幕共享功能仍可使用，但远程控制功能将受限")
+        return False
+    except Exception as e:
+        print(f"❌ PyAutoGUI初始化失败: {e}")
+        print("可能的原因:")
+        print("  - 缺少系统权限（macOS需要辅助功能权限）")
+        print("  - X11显示问题（Linux）")
+        print("  - 运行: python fix_pyautogui.py 进行诊断")
+        return False
+
+# 初始导入尝试
+try_import_pyautogui()
 
 class ScreenCapture:
     """屏幕捕获类"""
@@ -101,6 +120,16 @@ class RemoteController:
         self.enabled = PYAUTOGUI_AVAILABLE
         if not self.enabled:
             print("远程控制功能不可用：缺少pyautogui库")
+            print("运行 'python fix_pyautogui.py' 进行修复")
+    
+    def retry_import(self):
+        """重新尝试导入PyAutoGUI"""
+        global PYAUTOGUI_AVAILABLE
+        if try_import_pyautogui():
+            self.enabled = True
+            print("✅ PyAutoGUI重新导入成功，远程控制功能已启用")
+            return True
+        return False
     
     def move_mouse(self, x: int, y: int, screen_size: Tuple[int, int] = None):
         """移动鼠标"""
