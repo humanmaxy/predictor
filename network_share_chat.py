@@ -20,6 +20,9 @@ import glob
 # 导入加密和文件传输工具
 from encryption_utils import ChatEncryption
 from file_transfer_utils import FileTransferManager
+# 导入远程控制工具
+from remote_control_utils import RemoteControlManager
+from remote_control_gui import RemoteControlPanel
 # 注释掉复杂的导入，使用内置的简单实现
 # from improved_file_manager import FileManagerWindow, DownloadButton
 # from auto_download_manager import AutoDownloadManager, create_simple_download_button
@@ -39,6 +42,9 @@ class NetworkShareChatManager:
         
         # 文件传输管理器
         self.file_manager = FileTransferManager(share_path)
+        
+        # 远程控制管理器
+        self.remote_manager = RemoteControlManager(share_path)
         
         # 初始化目录结构
         self._init_directories()
@@ -476,6 +482,17 @@ class NetworkShareChatClient:
         
         download_dir_btn = ttk.Button(sync_frame, text="📁 下载目录", command=self.set_download_directory)
         download_dir_btn.pack(side=tk.RIGHT, padx=(0, 10))
+        
+        # 远程控制面板
+        try:
+            self.remote_control_panel = RemoteControlPanel(
+                main_frame, 
+                self.chat_manager.remote_manager if hasattr(self.chat_manager, 'remote_manager') else None, 
+                self.user_id
+            )
+        except Exception as e:
+            print(f"远程控制面板初始化失败: {e}")
+            self.remote_control_panel = None
     
     def browse_share_path(self):
         """浏览共享路径"""
@@ -555,6 +572,11 @@ class NetworkShareChatClient:
             # 显示下载目录
             self.add_system_message(f"文件下载目录: {self.download_dir}")
             
+            # 初始化远程控制面板
+            if self.remote_control_panel and hasattr(self.chat_manager, 'remote_manager'):
+                self.remote_control_panel.remote_manager = self.chat_manager.remote_manager
+                self.remote_control_panel.user_id = self.user_id
+            
             # 开始消息同步和心跳
             self.start_message_sync()
             self.start_heartbeat()
@@ -567,6 +589,20 @@ class NetworkShareChatClient:
         self.connected = False
         self.stop_message_sync()
         self.stop_heartbeat()
+        
+        # 停止远程控制功能
+        if self.remote_control_panel:
+            try:
+                if hasattr(self.remote_control_panel, 'allow_control_var') and self.remote_control_panel.allow_control_var.get():
+                    self.remote_control_panel.allow_control_var.set(False)
+                    self.remote_control_panel.toggle_allow_control()
+                
+                if hasattr(self.remote_control_panel, 'auto_share_var') and self.remote_control_panel.auto_share_var.get():
+                    self.remote_control_panel.auto_share_var.set(False)
+                    self.remote_control_panel.toggle_auto_share()
+            except Exception as e:
+                print(f"停止远程控制功能时出错: {e}")
+        
         self.connect_btn.config(text="加入聊天室")
         self.set_chat_state(False)
         self.status_var.set("未连接")
@@ -1151,7 +1187,23 @@ class NetworkShareChatClient:
             def download_file(event=None):
                 self._download_file_simple(file_info)
             
+            def download_file_as(event=None):
+                self._download_file_with_dialog(file_info)
+            
+            # 创建右键菜单
+            def show_download_menu(event):
+                try:
+                    menu = tk.Menu(self.root, tearoff=0)
+                    menu.add_command(label="下载到默认目录", command=download_file)
+                    menu.add_command(label="另存为...", command=download_file_as)
+                    menu.tk_popup(event.x_root, event.y_root)
+                except:
+                    pass
+                finally:
+                    menu.grab_release()
+            
             text_widget.tag_bind(tag_name, "<Button-1>", download_file)
+            text_widget.tag_bind(tag_name, "<Button-3>", show_download_menu)  # 右键菜单
             text_widget.tag_bind(tag_name, "<Enter>", lambda e: text_widget.config(cursor="hand2"))
             text_widget.tag_bind(tag_name, "<Leave>", lambda e: text_widget.config(cursor=""))
             
@@ -1162,8 +1214,8 @@ class NetworkShareChatClient:
         except Exception as e:
             print(f"添加下载链接失败: {e}")
     
-    def _download_file_simple(self, file_info: dict):
-        """简单的文件下载方法"""
+    def _download_file_simple(self, file_info: dict, custom_dir: str = None):
+        """简单的文件下载方法，支持自定义下载目录"""
         try:
             # 构建源文件路径
             if 'relative_path' in file_info:
@@ -1182,9 +1234,15 @@ class NetworkShareChatClient:
                 messagebox.showerror("错误", f"源文件不存在:\n{source_path}")
                 return
             
+            # 如果指定了自定义目录，使用自定义目录，否则使用默认下载目录
+            if custom_dir:
+                download_dir = custom_dir
+            else:
+                download_dir = self.download_dir
+            
             # 构建目标路径
             original_name = file_info.get('original_name', 'download_file')
-            target_path = Path(self.download_dir) / original_name
+            target_path = Path(download_dir) / original_name
             
             # 如果文件已存在，添加序号
             counter = 1
@@ -1198,6 +1256,8 @@ class NetworkShareChatClient:
             # 在后台线程中下载
             def download_task():
                 try:
+                    # 确保目标目录存在
+                    target_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(source_path, target_path)
                     
                     if target_path.exists() and target_path.stat().st_size > 0:
@@ -1219,6 +1279,40 @@ class NetworkShareChatClient:
             # 显示下载开始提示
             self.add_system_message(f"开始下载: {original_name}")
             
+        except Exception as e:
+            messagebox.showerror("下载错误", f"下载操作失败: {str(e)}")
+    
+    def _download_file_with_dialog(self, file_info: dict):
+        """弹出对话框选择下载目录并下载文件"""
+        try:
+            original_name = file_info.get('original_name', 'download_file')
+            
+            # 弹出文件保存对话框
+            save_path = filedialog.asksaveasfilename(
+                title="保存文件到...",
+                initialname=original_name,
+                defaultextension=Path(original_name).suffix,
+                filetypes=[
+                    ("所有文件", "*.*"),
+                    ("文本文件", "*.txt"),
+                    ("图片文件", "*.jpg;*.png;*.gif;*.bmp"),
+                    ("文档文件", "*.doc;*.docx;*.pdf"),
+                    ("表格文件", "*.xls;*.xlsx"),
+                    ("压缩文件", "*.zip;*.rar;*.7z")
+                ]
+            )
+            
+            if save_path:
+                # 使用指定的保存路径下载文件
+                custom_dir = os.path.dirname(save_path)
+                custom_name = os.path.basename(save_path)
+                
+                # 临时修改文件信息中的原始名称
+                temp_file_info = file_info.copy()
+                temp_file_info['original_name'] = custom_name
+                
+                self._download_file_simple(temp_file_info, custom_dir)
+                
         except Exception as e:
             messagebox.showerror("下载错误", f"下载操作失败: {str(e)}")
     
