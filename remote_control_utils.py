@@ -13,7 +13,14 @@ import io
 import base64
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Tuple, Callable
+from typing import Optional, Dict, Tuple, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # 仅用于类型检查，运行时不导入
+    try:
+        import pyautogui as PyAutoGUIType
+    except ImportError:
+        PyAutoGUIType = None
 import tkinter as tk
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk, ImageGrab
@@ -23,6 +30,12 @@ import struct
 # 尝试导入鼠标键盘控制库
 PYAUTOGUI_AVAILABLE = False
 pyautogui = None
+
+# 类型提示和Pylance兼容性
+try:
+    import pyautogui as _pyautogui_module
+except ImportError:
+    _pyautogui_module = None
 
 def try_import_pyautogui():
     """尝试导入PyAutoGUI，支持不同的大小写形式"""
