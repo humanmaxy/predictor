@@ -2,3 +2,5 @@ websockets>=11.0.3
 cos-python-sdk-v5>=1.9.0
 urllib3>=1.26.0
 schedule>=1.1.0
+pillow>=9.0.0
+# pyautogui>=0.9.54  # 现在使用原生控制，无需PyAutoGUI
