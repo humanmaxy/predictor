@@ -9,22 +9,31 @@ import importlib.util
 import os
 from pathlib import Path
 
+def safe_print(text):
+    """安全的打印函数，避免编码错误"""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        # 如果有编码问题，使用ASCII安全版本
+        safe_text = text.encode('ascii', 'replace').decode('ascii')
+        print(safe_text)
+
 def get_python_info():
     """获取Python环境信息"""
-    print("🐍 Python环境信息:")
-    print(f"  版本: {sys.version}")
-    print(f"  可执行文件: {sys.executable}")
-    print(f"  路径: {sys.path[:3]}...")  # 只显示前3个路径
-    print()
+    safe_print("[Python] Python环境信息:")
+    safe_print(f"  版本: {sys.version}")
+    safe_print(f"  可执行文件: {sys.executable}")
+    safe_print(f"  路径: {sys.path[:3]}...")  # 只显示前3个路径
+    safe_print("")
 
 def check_pip():
     """检查pip是否可用"""
     try:
         import pip
-        print("✅ pip可用")
+        safe_print("[成功] pip可用")
         return True
     except ImportError:
-        print("❌ pip不可用")
+        safe_print("[失败] pip不可用")
         return False
 
 def run_command(cmd, description):
