@@ -613,26 +613,17 @@ class NativeRemoteControlManager:
             cmd_type = command.get('type')
             print(f"执行控制命令: {cmd_type}")
             
-            if cmd_type == 'mouse_move':
-                result = self.controller.move_mouse(
-                    command['x'], command['y'], 
-                    command.get('screen_size')
-                )
-                print(f"鼠标移动结果: {'成功' if result else '失败'}")
-            elif cmd_type == 'mouse_click':
-                result = self.controller.click_mouse(
-                    command['x'], command['y'], 
-                    command.get('button', 'left'),
-                    command.get('screen_size')
-                )
-                print(f"鼠标点击结果: {'成功' if result else '失败'} at ({command['x']}, {command['y']})")
-            elif cmd_type == 'mouse_scroll':
-                result = self.controller.scroll_mouse(
-                    command['x'], command['y'],
-                    command['delta'],
-                    command.get('screen_size')
-                )
-                print(f"鼠标滚动结果: {'成功' if result else '失败'}")
+            if cmd_type == 'execute_command':
+                result = self.controller.execute_command(command['command'])
+                print(f"命令执行结果: {'成功' if result['success'] else '失败'}")
+                if result['success']:
+                    if result['stdout']:
+                        print(f"输出: {result['stdout']}")
+                else:
+                    if result.get('stderr'):
+                        print(f"错误: {result['stderr']}")
+                    elif result.get('error'):
+                        print(f"错误: {result['error']}")
             elif cmd_type == 'key_press':
                 result = self.controller.press_key(command['key'])
                 print(f"按键结果: {'成功' if result else '失败'} key={command['key']}")

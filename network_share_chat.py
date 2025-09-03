@@ -29,13 +29,17 @@ except ImportError:
     from remote_control_utils import RemoteControlManager
     print("⚠️ 回退到PyAutoGUI远程控制")
 
-# 导入远程控制GUI - 优先使用原生控制
+# 导入简化的远程控制GUI - 仅命令行控制
 try:
-    from native_control_gui import NativeRemoteControlPanel as RemoteControlPanel
-    print("✅ 使用原生远程控制GUI")
+    from simple_remote_terminal import SimpleRemoteControlPanel as RemoteControlPanel
+    print("✅ 使用简化的远程命令行控制")
 except ImportError:
-    from remote_control_gui import RemoteControlPanel
-    print("⚠️ 回退到PyAutoGUI远程控制GUI")
+    try:
+        from native_control_gui import NativeRemoteControlPanel as RemoteControlPanel
+        print("⚠️ 回退到完整的原生远程控制GUI")
+    except ImportError:
+        from remote_control_gui import RemoteControlPanel
+        print("⚠️ 回退到PyAutoGUI远程控制GUI")
 # 注释掉复杂的导入，使用内置的简单实现
 # from improved_file_manager import FileManagerWindow, DownloadButton
 # from auto_download_manager import AutoDownloadManager, create_simple_download_button
