@@ -273,10 +273,13 @@ class NativeScreenShareWindow:
     def on_mouse_click(self, event):
         """鼠标点击事件"""
         if not self.is_viewing or not self.remote_screen_size:
+            print("点击被忽略：未在查看模式或无屏幕尺寸")
             return
         
         canvas_x = self.canvas.canvasx(event.x)
         canvas_y = self.canvas.canvasy(event.y)
+        
+        print(f"鼠标左键点击: ({canvas_x}, {canvas_y}), 屏幕尺寸: {self.remote_screen_size}")
         
         command = {
             'type': 'mouse_click',
@@ -286,7 +289,8 @@ class NativeScreenShareWindow:
             'screen_size': self.remote_screen_size
         }
         
-        self.remote_manager.send_control_command(command)
+        success = self.remote_manager.send_control_command(command)
+        print(f"发送点击命令: {'成功' if success else '失败'}")
     
     def on_mouse_right_click(self, event):
         """鼠标右键点击事件"""
@@ -307,9 +311,20 @@ class NativeScreenShareWindow:
         self.remote_manager.send_control_command(command)
     
     def on_mouse_move(self, event):
-        """鼠标移动事件"""
+        """鼠标移动事件 - 添加节流以避免过多命令"""
         if not self.is_viewing or not self.remote_screen_size:
             return
+        
+        # 节流：限制鼠标移动事件频率
+        import time
+        current_time = time.time()
+        if not hasattr(self, '_last_mouse_move_time'):
+            self._last_mouse_move_time = 0
+        
+        if current_time - self._last_mouse_move_time < 0.05:  # 50ms节流
+            return
+        
+        self._last_mouse_move_time = current_time
         
         canvas_x = self.canvas.canvasx(event.x)
         canvas_y = self.canvas.canvasy(event.y)
@@ -321,7 +336,9 @@ class NativeScreenShareWindow:
             'screen_size': self.remote_screen_size
         }
         
-        self.remote_manager.send_control_command(command)
+        success = self.remote_manager.send_control_command(command)
+        if not success:
+            print(f"发送鼠标移动命令失败: ({canvas_x}, {canvas_y})")
     
     def on_mouse_wheel(self, event):
         """鼠标滚轮事件"""

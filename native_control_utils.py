@@ -565,8 +565,10 @@ class NativeRemoteControlManager:
     def start_remote_control_listening(self, user_id: str) -> bool:
         """开始监听远程控制命令"""
         if self.is_controlling:
+            print("远程控制监听已在运行")
             return False
         
+        print(f"开始监听远程控制命令，用户ID: {user_id}")
         self.user_id = user_id
         self.is_controlling = True
         self.monitoring = True
@@ -576,6 +578,7 @@ class NativeRemoteControlManager:
         )
         self.control_monitor_thread.start()
         
+        print("远程控制监听线程已启动")
         return True
     
     def stop_remote_control_listening(self):
@@ -600,6 +603,8 @@ class NativeRemoteControlManager:
                 "timestamp": datetime.now().isoformat(),
                 "command": command
             }
+            
+            print(f"发送控制命令: {command['type']} -> {command_file.name}")
             
             with open(command_file, 'w', encoding='utf-8') as f:
                 json.dump(command_data, f, ensure_ascii=False)
@@ -664,19 +669,29 @@ class NativeRemoteControlManager:
     
     def _monitor_control_commands(self):
         """监听控制命令"""
+        print("开始监听控制命令循环...")
         try:
             processed_commands = set()
+            loop_count = 0
             
             while self.monitoring:
+                loop_count += 1
                 command_files = list(self.control_dir.glob("cmd_*.json"))
+                
+                if loop_count % 200 == 0:  # 每10秒打印一次状态
+                    print(f"监听循环运行中... 发现 {len(command_files)} 个命令文件")
                 
                 for cmd_file in command_files:
                     if cmd_file.name in processed_commands:
                         continue
                     
+                    print(f"处理命令文件: {cmd_file.name}")
+                    
                     try:
                         with open(cmd_file, 'r', encoding='utf-8') as f:
                             command_data = json.load(f)
+                        
+                        print(f"读取命令数据: {command_data['command']['type']}")
                         
                         # 执行命令
                         self._execute_control_command(command_data['command'])
@@ -686,48 +701,66 @@ class NativeRemoteControlManager:
                         
                         # 删除命令文件
                         cmd_file.unlink()
+                        print(f"命令文件已删除: {cmd_file.name}")
                         
                     except Exception as e:
                         print(f"处理控制命令失败: {e}")
+                        import traceback
+                        traceback.print_exc()
                 
                 # 清理过期的处理记录
                 if len(processed_commands) > 100:
                     processed_commands.clear()
+                    print("清理过期的处理记录")
                 
                 time.sleep(0.05)  # 50ms检查间隔
                 
         except Exception as e:
             print(f"监听控制命令失败: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            print("监听控制命令循环结束")
     
     def _execute_control_command(self, command: Dict):
         """执行控制命令"""
         try:
             cmd_type = command.get('type')
+            print(f"执行控制命令: {cmd_type}")
             
             if cmd_type == 'mouse_move':
-                self.controller.move_mouse(
+                result = self.controller.move_mouse(
                     command['x'], command['y'], 
                     command.get('screen_size')
                 )
+                print(f"鼠标移动结果: {'成功' if result else '失败'}")
             elif cmd_type == 'mouse_click':
-                self.controller.click_mouse(
+                result = self.controller.click_mouse(
                     command['x'], command['y'], 
                     command.get('button', 'left'),
                     command.get('screen_size')
                 )
+                print(f"鼠标点击结果: {'成功' if result else '失败'} at ({command['x']}, {command['y']})")
             elif cmd_type == 'mouse_scroll':
-                self.controller.scroll_mouse(
+                result = self.controller.scroll_mouse(
                     command['x'], command['y'],
                     command['delta'],
                     command.get('screen_size')
                 )
+                print(f"鼠标滚动结果: {'成功' if result else '失败'}")
             elif cmd_type == 'key_press':
-                self.controller.press_key(command['key'])
+                result = self.controller.press_key(command['key'])
+                print(f"按键结果: {'成功' if result else '失败'} key={command['key']}")
             elif cmd_type == 'type_text':
-                self.controller.type_text(command['text'])
+                result = self.controller.type_text(command['text'])
+                print(f"文本输入结果: {'成功' if result else '失败'} text={command['text']}")
+            else:
+                print(f"未知命令类型: {cmd_type}")
             
         except Exception as e:
             print(f"执行控制命令失败: {e}")
+            import traceback
+            traceback.print_exc()
 
 def test_native_control():
     """测试原生控制功能"""
