@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-远程控制GUI组件
-提供屏幕共享和远程控制的用户界面
+原生远程控制GUI组件
+使用系统原生方法，无需PyAutoGUI依赖
 """
 
 import tkinter as tk
@@ -13,27 +13,19 @@ from pathlib import Path
 from PIL import Image, ImageTk
 import io
 
-# 导入远程控制管理器 - 优先使用原生控制
-try:
-    from native_control_utils import NativeRemoteControlManager as RemoteControlManager
-    from native_control_gui import NativeRemoteControlPanel as RemoteControlPanel
-    from native_control_gui import NativeScreenShareWindow as ScreenShareWindow
-    USING_NATIVE_CONTROL = True
-except ImportError:
-    from remote_control_utils import RemoteControlManager
-    USING_NATIVE_CONTROL = False
+from native_control_utils import NativeRemoteControlManager
 
-class ScreenShareWindow:
-    """屏幕共享窗口"""
+class NativeScreenShareWindow:
+    """原生屏幕共享窗口"""
     
-    def __init__(self, parent, remote_manager: RemoteControlManager, user_id: str):
+    def __init__(self, parent, remote_manager: NativeRemoteControlManager, user_id: str):
         self.parent = parent
         self.remote_manager = remote_manager
         self.user_id = user_id
         
         # 创建窗口
         self.window = tk.Toplevel(parent)
-        self.window.title("屏幕共享")
+        self.window.title("屏幕共享 (原生控制)")
         self.window.geometry("800x600")
         self.window.minsize(400, 300)
         
@@ -57,7 +49,7 @@ class ScreenShareWindow:
         main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # 控制面板
-        control_frame = ttk.LabelFrame(main_frame, text="控制面板", padding=5)
+        control_frame = ttk.LabelFrame(main_frame, text="控制面板 (原生控制)", padding=5)
         control_frame.pack(fill=tk.X, pady=(0, 5))
         
         # 共享控制
@@ -97,6 +89,24 @@ class ScreenShareWindow:
         )
         self.control_checkbox.pack(side=tk.LEFT, padx=(10, 0))
         
+        # 控制方法显示
+        method_frame = ttk.Frame(control_frame)
+        method_frame.pack(fill=tk.X, pady=2)
+        
+        controller_enabled = self.remote_manager.controller.enabled
+        controller_system = self.remote_manager.controller.system
+        
+        if controller_enabled:
+            method_text = f"✅ 原生控制可用 (系统: {controller_system})"
+            method_color = "green"
+        else:
+            method_text = f"❌ 原生控制不可用 (系统: {controller_system})"
+            method_color = "red"
+        
+        ttk.Label(method_frame, text="控制方法:", font=("Arial", 8)).pack(side=tk.LEFT)
+        ttk.Label(method_frame, text=method_text, font=("Arial", 8), 
+                 foreground=method_color).pack(side=tk.LEFT, padx=(10, 0))
+        
         # 屏幕显示区域
         screen_frame = ttk.LabelFrame(main_frame, text="屏幕显示", padding=5)
         screen_frame.pack(fill=tk.BOTH, expand=True)
@@ -121,7 +131,7 @@ class ScreenShareWindow:
         status_frame = ttk.Frame(main_frame)
         status_frame.pack(fill=tk.X, pady=(5, 0))
         
-        self.status_label = ttk.Label(status_frame, text="就绪", relief=tk.SUNKEN, anchor=tk.W)
+        self.status_label = ttk.Label(status_frame, text="就绪 - 使用原生控制", relief=tk.SUNKEN, anchor=tk.W)
         self.status_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         self.fps_label = ttk.Label(status_frame, text="FPS: 0", relief=tk.SUNKEN, width=10)
@@ -137,7 +147,7 @@ class ScreenShareWindow:
         self.canvas.bind("<Motion>", self.on_mouse_move)
         self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)
         self.canvas.bind("<Key>", self.on_key_press)
-        self.canvas.focus_set()  # 让画布能接收键盘事件
+        self.canvas.focus_set()
     
     def toggle_sharing(self):
         """切换屏幕共享状态"""
@@ -146,7 +156,7 @@ class ScreenShareWindow:
                 self.is_sharing = True
                 self.share_button.config(text="停止共享")
                 self.share_status.config(text="正在共享", foreground="green")
-                self.update_status("屏幕共享已开始")
+                self.update_status("屏幕共享已开始 (原生)")
             else:
                 messagebox.showerror("错误", "无法启动屏幕共享")
         else:
@@ -176,7 +186,7 @@ class ScreenShareWindow:
         """切换远程控制权限"""
         if self.control_var.get():
             if self.remote_manager.start_remote_control_listening(self.user_id):
-                self.update_status("已允许远程控制")
+                self.update_status("已允许原生远程控制")
             else:
                 self.control_var.set(False)
                 messagebox.showerror("错误", "无法启动远程控制监听")
@@ -265,11 +275,9 @@ class ScreenShareWindow:
         if not self.is_viewing or not self.remote_screen_size:
             return
         
-        # 获取画布坐标
         canvas_x = self.canvas.canvasx(event.x)
         canvas_y = self.canvas.canvasy(event.y)
         
-        # 发送点击命令
         command = {
             'type': 'mouse_click',
             'x': int(canvas_x),
@@ -395,10 +403,10 @@ class ScreenShareWindow:
         
         self.window.destroy()
 
-class RemoteControlPanel:
-    """远程控制面板（嵌入到主聊天窗口）"""
+class NativeRemoteControlPanel:
+    """原生远程控制面板（嵌入到主聊天窗口）"""
     
-    def __init__(self, parent_frame, remote_manager: RemoteControlManager, user_id: str):
+    def __init__(self, parent_frame, remote_manager: NativeRemoteControlManager, user_id: str):
         self.parent_frame = parent_frame
         self.remote_manager = remote_manager
         self.user_id = user_id
@@ -411,7 +419,7 @@ class RemoteControlPanel:
     def _create_widgets(self):
         """创建远程控制面板"""
         # 远程控制框架
-        self.remote_frame = ttk.LabelFrame(self.parent_frame, text="远程控制", padding=5)
+        self.remote_frame = ttk.LabelFrame(self.parent_frame, text="远程控制 (原生)", padding=5)
         self.remote_frame.pack(fill=tk.X, pady=(5, 0))
         
         # 按钮框架
@@ -426,8 +434,17 @@ class RemoteControlPanel:
         self.screen_share_btn.pack(side=tk.LEFT, padx=(0, 5))
         
         # 状态显示
-        self.status_var = tk.StringVar(value="远程控制就绪")
-        self.status_label = ttk.Label(button_frame, textvariable=self.status_var, font=("Arial", 8))
+        controller_enabled = self.remote_manager.controller.enabled
+        if controller_enabled:
+            status_text = f"原生控制就绪 ({self.remote_manager.controller.system})"
+            status_color = "green"
+        else:
+            status_text = f"原生控制不可用 ({self.remote_manager.controller.system})"
+            status_color = "red"
+        
+        self.status_var = tk.StringVar(value=status_text)
+        self.status_label = ttk.Label(button_frame, textvariable=self.status_var, 
+                                    font=("Arial", 8), foreground=status_color)
         self.status_label.pack(side=tk.LEFT, padx=(10, 0))
         
         # 快速控制选项
@@ -437,7 +454,7 @@ class RemoteControlPanel:
         # 允许被控制
         self.allow_control_var = tk.BooleanVar()
         self.allow_control_cb = ttk.Checkbutton(
-            options_frame, text="允许他人控制我的电脑",
+            options_frame, text="允许他人控制我的电脑 (原生)",
             variable=self.allow_control_var,
             command=self.toggle_allow_control
         )
@@ -451,11 +468,16 @@ class RemoteControlPanel:
             command=self.toggle_auto_share
         )
         self.auto_share_cb.pack(side=tk.LEFT, padx=(20, 0))
+        
+        # 如果原生控制不可用，禁用控制选项
+        if not controller_enabled:
+            self.allow_control_cb.config(state='disabled')
+            self.auto_share_cb.config(state='disabled')
     
     def open_screen_share_window(self):
         """打开屏幕共享窗口"""
         if self.screen_window is None or not self.screen_window.window.winfo_exists():
-            self.screen_window = ScreenShareWindow(
+            self.screen_window = NativeScreenShareWindow(
                 self.parent_frame.winfo_toplevel(), 
                 self.remote_manager, 
                 self.user_id
@@ -466,15 +488,22 @@ class RemoteControlPanel:
     
     def toggle_allow_control(self):
         """切换允许控制状态"""
+        if not self.remote_manager.controller.enabled:
+            messagebox.showwarning("功能不可用", "当前系统不支持原生远程控制")
+            self.allow_control_var.set(False)
+            return
+        
         if self.allow_control_var.get():
             if self.remote_manager.start_remote_control_listening(self.user_id):
-                self.status_var.set("允许远程控制中...")
+                self.status_var.set("允许原生远程控制中...")
             else:
                 self.allow_control_var.set(False)
                 messagebox.showerror("错误", "无法启动远程控制监听")
         else:
             self.remote_manager.stop_remote_control_listening()
-            self.status_var.set("远程控制就绪")
+            controller_enabled = self.remote_manager.controller.enabled
+            if controller_enabled:
+                self.status_var.set(f"原生控制就绪 ({self.remote_manager.controller.system})")
     
     def toggle_auto_share(self):
         """切换自动共享状态"""
@@ -487,23 +516,25 @@ class RemoteControlPanel:
         else:
             self.remote_manager.stop_screen_sharing()
             if not self.allow_control_var.get():
-                self.status_var.set("远程控制就绪")
+                controller_enabled = self.remote_manager.controller.enabled
+                if controller_enabled:
+                    self.status_var.set(f"原生控制就绪 ({self.remote_manager.controller.system})")
 
-def test_remote_control_gui():
-    """测试远程控制GUI"""
+def test_native_remote_control_gui():
+    """测试原生远程控制GUI"""
     import tempfile
     
     root = tk.Tk()
-    root.title("远程控制GUI测试")
+    root.title("原生远程控制GUI测试")
     root.geometry("600x400")
     
     with tempfile.TemporaryDirectory() as temp_dir:
-        remote_manager = RemoteControlManager(temp_dir)
+        remote_manager = NativeRemoteControlManager(temp_dir)
         
         # 创建远程控制面板
-        panel = RemoteControlPanel(root, remote_manager, "test_user")
+        panel = NativeRemoteControlPanel(root, remote_manager, "test_user")
         
         root.mainloop()
 
 if __name__ == "__main__":
-    test_remote_control_gui()
+    test_native_remote_control_gui()

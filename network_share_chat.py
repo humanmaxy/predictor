@@ -21,8 +21,21 @@ import glob
 from encryption_utils import ChatEncryption
 from file_transfer_utils import FileTransferManager
 # 导入远程控制工具
-from remote_control_utils import RemoteControlManager
-from remote_control_gui import RemoteControlPanel
+# 导入远程控制工具 - 优先使用原生控制
+try:
+    from native_control_utils import NativeRemoteControlManager as RemoteControlManager
+    print("✅ 使用原生远程控制（无需PyAutoGUI）")
+except ImportError:
+    from remote_control_utils import RemoteControlManager
+    print("⚠️ 回退到PyAutoGUI远程控制")
+
+# 导入远程控制GUI - 优先使用原生控制
+try:
+    from native_control_gui import NativeRemoteControlPanel as RemoteControlPanel
+    print("✅ 使用原生远程控制GUI")
+except ImportError:
+    from remote_control_gui import RemoteControlPanel
+    print("⚠️ 回退到PyAutoGUI远程控制GUI")
 # 注释掉复杂的导入，使用内置的简单实现
 # from improved_file_manager import FileManagerWindow, DownloadButton
 # from auto_download_manager import AutoDownloadManager, create_simple_download_button
