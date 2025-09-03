@@ -20,8 +20,9 @@ import glob
 # 导入加密和文件传输工具
 from encryption_utils import ChatEncryption
 from file_transfer_utils import FileTransferManager
-from improved_file_manager import FileManagerWindow, DownloadButton
-from auto_download_manager import AutoDownloadManager, create_simple_download_button
+# 注释掉复杂的导入，使用内置的简单实现
+# from improved_file_manager import FileManagerWindow, DownloadButton
+# from auto_download_manager import AutoDownloadManager, create_simple_download_button
 
 class NetworkShareChatManager:
     """网络共享目录聊天管理器"""
@@ -336,8 +337,10 @@ class NetworkShareChatClient:
         self.private_chat_windows = {}
         self.online_users = {}
         
-        # 下载管理器
-        self.download_manager = None
+        # 下载设置
+        self.download_dir = str(Path.home() / "Downloads" / "ChatFiles")
+        # 确保下载目录存在
+        Path(self.download_dir).mkdir(parents=True, exist_ok=True)
         
         # 创建界面
         self.create_widgets()
@@ -549,9 +552,8 @@ class NetworkShareChatClient:
             self.add_system_message("已加入局域网共享聊天室")
             self.add_system_message("消息存储在网络共享目录，每天凌晨2点自动清理")
             
-            # 初始化下载管理器
-            self.download_manager = AutoDownloadManager(self.root)
-            self.add_system_message(f"文件下载目录: {self.download_manager.download_dir}")
+            # 显示下载目录
+            self.add_system_message(f"文件下载目录: {self.download_dir}")
             
             # 开始消息同步和心跳
             self.start_message_sync()
@@ -950,9 +952,8 @@ class NetworkShareChatClient:
             
             if is_public:
                 self.add_chat_message(message_text)
-                # 使用简单的下载组件
-                if self.download_manager:
-                    create_simple_download_button(self.message_display, file_info, self.chat_manager, self.download_manager)
+                # 添加简单的下载链接
+                self._add_download_link(self.message_display, file_info)
             
         except Exception as e:
             print(f"添加文件消息失败: {e}")
@@ -986,9 +987,8 @@ class NetworkShareChatClient:
                 icon = "🖼️" if file_type == 'image' else "📎"
                 window.message_display.insert(tk.END, f"{message_text.split(':')[0]}: {icon} {file_name} ({size_str})\n")
                 
-                # 使用简单的下载组件
-                if self.download_manager:
-                    create_simple_download_button(window.message_display, file_info, self.chat_manager, self.download_manager)
+                # 添加简单的下载链接
+                self._add_download_link(window.message_display, file_info)
             else:
                 window.message_display.insert(tk.END, f"{message_text}\n")
             
@@ -1009,10 +1009,103 @@ class NetworkShareChatClient:
             return
         
         try:
-            # 创建文件管理窗口
-            FileManagerWindow(self.root, self.chat_manager, self.user_id, self.username)
+            # 简化的文件管理器 - 显示文件列表
+            self._show_simple_file_list()
         except Exception as e:
             messagebox.showerror("错误", f"无法打开文件管理器: {str(e)}")
+    
+    def _show_simple_file_list(self):
+        """显示简单的文件列表"""
+        # 创建文件列表窗口
+        file_window = tk.Toplevel(self.root)
+        file_window.title("共享文件列表")
+        file_window.geometry("600x400")
+        
+        frame = ttk.Frame(file_window, padding="10")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(frame, text="📁 共享文件列表", font=("Arial", 14, "bold")).pack(pady=(0, 10))
+        
+        # 文件列表框
+        list_frame = ttk.Frame(frame)
+        list_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 创建列表框和滚动条
+        listbox_frame = ttk.Frame(list_frame)
+        listbox_frame.pack(fill=tk.BOTH, expand=True)
+        
+        file_listbox = tk.Listbox(listbox_frame, font=("Consolas", 10))
+        scrollbar = ttk.Scrollbar(listbox_frame, orient=tk.VERTICAL, command=file_listbox.yview)
+        file_listbox.configure(yscrollcommand=scrollbar.set)
+        
+        file_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 加载文件列表
+        try:
+            file_count = 0
+            
+            # 扫描files目录
+            if self.chat_manager.file_manager.files_dir.exists():
+                for file_path in self.chat_manager.file_manager.files_dir.glob("*"):
+                    if file_path.is_file():
+                        size = file_path.stat().st_size
+                        size_str = self._format_file_size(size)
+                        file_listbox.insert(tk.END, f"📎 {file_path.name} ({size_str})")
+                        file_count += 1
+            
+            # 扫描images目录
+            if self.chat_manager.file_manager.images_dir.exists():
+                for file_path in self.chat_manager.file_manager.images_dir.glob("*"):
+                    if file_path.is_file():
+                        size = file_path.stat().st_size
+                        size_str = self._format_file_size(size)
+                        file_listbox.insert(tk.END, f"🖼️ {file_path.name} ({size_str})")
+                        file_count += 1
+            
+            if file_count == 0:
+                file_listbox.insert(tk.END, "暂无共享文件")
+            
+        except Exception as e:
+            file_listbox.insert(tk.END, f"加载文件列表失败: {e}")
+        
+        # 操作按钮
+        button_frame = ttk.Frame(frame)
+        button_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        def download_selected():
+            selection = file_listbox.curselection()
+            if selection:
+                selected_text = file_listbox.get(selection[0])
+                if selected_text and not selected_text.startswith("暂无") and not selected_text.startswith("加载"):
+                    # 解析文件名
+                    filename = selected_text.split(" ")[1]  # 去掉图标
+                    filename = filename.split(" (")[0]  # 去掉大小信息
+                    
+                    # 构建文件信息
+                    file_info = {
+                        "filename": filename,
+                        "original_name": filename,
+                        "file_type": "image" if selected_text.startswith("🖼️") else "file"
+                    }
+                    
+                    self._download_file_simple(file_info)
+                    file_window.destroy()
+            else:
+                messagebox.showwarning("提示", "请选择要下载的文件")
+        
+        ttk.Button(button_frame, text="📥 下载选中文件", command=download_selected).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(button_frame, text="🔄 刷新列表", command=lambda: self._show_simple_file_list()).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(button_frame, text="关闭", command=file_window.destroy).pack(side=tk.RIGHT)
+    
+    def _format_file_size(self, size: int) -> str:
+        """格式化文件大小"""
+        if size < 1024:
+            return f"{size} B"
+        elif size < 1024 * 1024:
+            return f"{size / 1024:.1f} KB"
+        else:
+            return f"{size / (1024 * 1024):.1f} MB"
     
     def set_download_directory(self):
         """设置下载目录"""
@@ -1020,11 +1113,114 @@ class NetworkShareChatClient:
             messagebox.showwarning("未连接", "请先连接到聊天室")
             return
         
-        if self.download_manager:
-            if self.download_manager.set_download_directory():
-                self.add_system_message(f"下载目录已更新: {self.download_manager.download_dir}")
-        else:
-            messagebox.showwarning("提示", "下载管理器未初始化")
+        new_dir = filedialog.askdirectory(
+            title="选择文件下载目录",
+            initialdir=self.download_dir
+        )
+        
+        if new_dir:
+            self.download_dir = new_dir
+            Path(self.download_dir).mkdir(parents=True, exist_ok=True)
+            self.add_system_message(f"下载目录已更新: {self.download_dir}")
+            messagebox.showinfo("设置成功", f"下载目录已设置为:\n{self.download_dir}")
+    
+    def _add_download_link(self, text_widget, file_info: dict):
+        """添加下载链接到文本框"""
+        try:
+            file_name = file_info.get('original_name', '未知文件')
+            
+            # 启用文本框编辑
+            text_widget.config(state=tk.NORMAL)
+            
+            # 插入下载提示
+            download_text = f"    📥 "
+            text_widget.insert(tk.END, download_text)
+            
+            # 创建可点击的下载链接
+            start_index = text_widget.index(tk.END + "-1c")
+            link_text = f"[点击下载到 {os.path.basename(self.download_dir)}]"
+            text_widget.insert(tk.END, link_text)
+            end_index = text_widget.index(tk.END + "-1c")
+            
+            # 为链接添加样式和事件
+            tag_name = f"download_{id(file_info)}"
+            text_widget.tag_add(tag_name, start_index, end_index)
+            text_widget.tag_config(tag_name, foreground="blue", underline=True)
+            
+            # 绑定下载事件
+            def download_file(event=None):
+                self._download_file_simple(file_info)
+            
+            text_widget.tag_bind(tag_name, "<Button-1>", download_file)
+            text_widget.tag_bind(tag_name, "<Enter>", lambda e: text_widget.config(cursor="hand2"))
+            text_widget.tag_bind(tag_name, "<Leave>", lambda e: text_widget.config(cursor=""))
+            
+            text_widget.insert(tk.END, "\n")
+            text_widget.config(state=tk.DISABLED)
+            text_widget.see(tk.END)
+            
+        except Exception as e:
+            print(f"添加下载链接失败: {e}")
+    
+    def _download_file_simple(self, file_info: dict):
+        """简单的文件下载方法"""
+        try:
+            # 构建源文件路径
+            if 'relative_path' in file_info:
+                source_path = self.chat_manager.share_path / file_info['relative_path']
+            else:
+                # 根据文件类型构建路径
+                filename = file_info.get('filename', file_info.get('original_name', ''))
+                file_type = file_info.get('file_type', 'file')
+                
+                if file_type == 'image':
+                    source_path = self.chat_manager.file_manager.images_dir / filename
+                else:
+                    source_path = self.chat_manager.file_manager.files_dir / filename
+            
+            if not source_path.exists():
+                messagebox.showerror("错误", f"源文件不存在:\n{source_path}")
+                return
+            
+            # 构建目标路径
+            original_name = file_info.get('original_name', 'download_file')
+            target_path = Path(self.download_dir) / original_name
+            
+            # 如果文件已存在，添加序号
+            counter = 1
+            original_target = target_path
+            while target_path.exists():
+                stem = original_target.stem
+                suffix = original_target.suffix
+                target_path = original_target.parent / f"{stem}_{counter}{suffix}"
+                counter += 1
+            
+            # 在后台线程中下载
+            def download_task():
+                try:
+                    shutil.copy2(source_path, target_path)
+                    
+                    if target_path.exists() and target_path.stat().st_size > 0:
+                        success_msg = f"文件下载成功!\n保存位置: {target_path}"
+                        self.root.after(0, lambda: messagebox.showinfo("下载完成", success_msg))
+                        self.root.after(0, lambda: self.add_system_message(f"下载完成: {target_path.name}"))
+                    else:
+                        raise Exception("下载的文件为空")
+                        
+                except Exception as e:
+                    error_msg = f"下载失败: {str(e)}"
+                    self.root.after(0, lambda: messagebox.showerror("下载失败", error_msg))
+                    self.root.after(0, lambda: self.add_system_message(error_msg))
+            
+            # 启动下载线程
+            thread = threading.Thread(target=download_task, daemon=True)
+            thread.start()
+            
+            # 显示下载开始提示
+            self.add_system_message(f"开始下载: {original_name}")
+            
+        except Exception as e:
+            messagebox.showerror("下载错误", f"下载操作失败: {str(e)}")
     
     def on_closing(self):
         """窗口关闭事件"""
