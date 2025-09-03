@@ -261,7 +261,7 @@ class FileManagerWindow:
         # 选择保存位置
         save_path = filedialog.asksaveasfilename(
             title="保存文件",
-            initialname=self.selected_file['original_name'],
+            initialfile=self.selected_file['original_name'],
             defaultextension=Path(self.selected_file['original_name']).suffix
         )
         
@@ -272,8 +272,7 @@ class FileManagerWindow:
         """在后台线程中下载文件"""
         def download_task():
             try:
-                self.status_var.set("正在下载文件...")
-                self.window.update()
+                self.window.after(0, lambda: self.status_var.set("正在下载文件..."))
                 
                 # 复制文件
                 source_path = Path(self.selected_file['full_path'])
@@ -282,13 +281,21 @@ class FileManagerWindow:
                 if not source_path.exists():
                     raise FileNotFoundError(f"源文件不存在: {source_path}")
                 
+                # 确保目标目录存在
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                
                 # 复制文件
                 import shutil
                 shutil.copy2(source_path, target_path)
                 
-                # 更新状态
-                self.window.after(0, lambda: self.status_var.set(f"下载完成: {target_path}"))
-                self.window.after(0, lambda: messagebox.showinfo("下载完成", f"文件已保存到:\n{target_path}"))
+                # 验证下载是否成功
+                if target_path.exists() and target_path.stat().st_size > 0:
+                    success_msg = f"下载完成: {target_path.name}"
+                    detail_msg = f"文件已保存到:\n{target_path}"
+                    self.window.after(0, lambda: self.status_var.set(success_msg))
+                    self.window.after(0, lambda: messagebox.showinfo("下载完成", detail_msg))
+                else:
+                    raise Exception("下载的文件为空或不存在")
                 
             except Exception as e:
                 error_msg = f"下载失败: {str(e)}"

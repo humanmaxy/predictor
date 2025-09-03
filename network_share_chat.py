@@ -21,6 +21,7 @@ import glob
 from encryption_utils import ChatEncryption
 from file_transfer_utils import FileTransferManager
 from improved_file_manager import FileManagerWindow, DownloadButton
+from auto_download_manager import AutoDownloadManager, create_simple_download_button
 
 class NetworkShareChatManager:
     """网络共享目录聊天管理器"""
@@ -335,6 +336,9 @@ class NetworkShareChatClient:
         self.private_chat_windows = {}
         self.online_users = {}
         
+        # 下载管理器
+        self.download_manager = None
+        
         # 创建界面
         self.create_widgets()
     
@@ -463,9 +467,12 @@ class NetworkShareChatClient:
         last_sync_label = ttk.Label(sync_frame, textvariable=self.last_sync_var, font=("Arial", 8))
         last_sync_label.pack(side=tk.RIGHT)
         
-        # 清理按钮
+        # 清理按钮和下载设置
         cleanup_btn = ttk.Button(sync_frame, text="清理旧消息", command=self.cleanup_messages)
-        cleanup_btn.pack(side=tk.RIGHT, padx=(0, 20))
+        cleanup_btn.pack(side=tk.RIGHT, padx=(0, 10))
+        
+        download_dir_btn = ttk.Button(sync_frame, text="📁 下载目录", command=self.set_download_directory)
+        download_dir_btn.pack(side=tk.RIGHT, padx=(0, 10))
     
     def browse_share_path(self):
         """浏览共享路径"""
@@ -541,6 +548,10 @@ class NetworkShareChatClient:
             self.status_var.set(f"已连接到共享聊天室: {os.path.basename(share_path)}")
             self.add_system_message("已加入局域网共享聊天室")
             self.add_system_message("消息存储在网络共享目录，每天凌晨2点自动清理")
+            
+            # 初始化下载管理器
+            self.download_manager = AutoDownloadManager(self.root)
+            self.add_system_message(f"文件下载目录: {self.download_manager.download_dir}")
             
             # 开始消息同步和心跳
             self.start_message_sync()
@@ -939,8 +950,9 @@ class NetworkShareChatClient:
             
             if is_public:
                 self.add_chat_message(message_text)
-                # 添加下载提示和文件管理器链接
-                self.add_chat_message(f"    📥 使用文件管理器下载，或点击上方 '📁 文件管理' 按钮")
+                # 使用简单的下载组件
+                if self.download_manager:
+                    create_simple_download_button(self.message_display, file_info, self.chat_manager, self.download_manager)
             
         except Exception as e:
             print(f"添加文件消息失败: {e}")
@@ -973,7 +985,10 @@ class NetworkShareChatClient:
                 
                 icon = "🖼️" if file_type == 'image' else "📎"
                 window.message_display.insert(tk.END, f"{message_text.split(':')[0]}: {icon} {file_name} ({size_str})\n")
-                window.message_display.insert(tk.END, f"    💡 双击可下载文件\n")
+                
+                # 使用简单的下载组件
+                if self.download_manager:
+                    create_simple_download_button(window.message_display, file_info, self.chat_manager, self.download_manager)
             else:
                 window.message_display.insert(tk.END, f"{message_text}\n")
             
@@ -998,6 +1013,18 @@ class NetworkShareChatClient:
             FileManagerWindow(self.root, self.chat_manager, self.user_id, self.username)
         except Exception as e:
             messagebox.showerror("错误", f"无法打开文件管理器: {str(e)}")
+    
+    def set_download_directory(self):
+        """设置下载目录"""
+        if not self.connected:
+            messagebox.showwarning("未连接", "请先连接到聊天室")
+            return
+        
+        if self.download_manager:
+            if self.download_manager.set_download_directory():
+                self.add_system_message(f"下载目录已更新: {self.download_manager.download_dir}")
+        else:
+            messagebox.showwarning("提示", "下载管理器未初始化")
     
     def on_closing(self):
         """窗口关闭事件"""
