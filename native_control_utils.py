@@ -201,159 +201,9 @@ class NativeController:
             pass
         return (1920, 1080)
     
-    def move_mouse(self, x: int, y: int, screen_size: Tuple[int, int] = None):
-        """移动鼠标"""
-        if not self.enabled:
-            return False
-        
-        try:
-            # 坐标转换
-            if screen_size:
-                current_size = self.get_screen_size()
-                x = int(x * current_size[0] / screen_size[0])
-                y = int(y * current_size[1] / screen_size[1])
-            
-            if self.system == 'windows':
-                return self._move_mouse_windows(x, y)
-            elif self.system == 'darwin':
-                return self._move_mouse_macos(x, y)
-            elif self.system == 'linux':
-                return self._move_mouse_linux(x, y)
-                
-        except Exception as e:
-            print(f"移动鼠标失败: {e}")
-            return False
+    # 鼠标操作已移除 - 仅保留键盘和命令行控制
     
-    def _move_mouse_windows(self, x: int, y: int):
-        """Windows移动鼠标"""
-        import ctypes
-        ctypes.windll.user32.SetCursorPos(x, y)
-        return True
-    
-    def _move_mouse_macos(self, x: int, y: int):
-        """macOS移动鼠标"""
-        try:
-            subprocess.run([
-                'osascript', '-e', 
-                f'tell application "System Events" to set the mouse location to {{{x}, {y}}}'
-            ], check=True)
-            return True
-        except:
-            return False
-    
-    def _move_mouse_linux(self, x: int, y: int):
-        """Linux移动鼠标"""
-        try:
-            subprocess.run(['xdotool', 'mousemove', str(x), str(y)], check=True)
-            return True
-        except:
-            return False
-    
-    def click_mouse(self, x: int, y: int, button: str = 'left', screen_size: Tuple[int, int] = None):
-        """点击鼠标"""
-        if not self.enabled:
-            return False
-        
-        try:
-            # 先移动到位置
-            if not self.move_mouse(x, y, screen_size):
-                return False
-            
-            # 点击
-            if self.system == 'windows':
-                return self._click_mouse_windows(button)
-            elif self.system == 'darwin':
-                return self._click_mouse_macos(button)
-            elif self.system == 'linux':
-                return self._click_mouse_linux(button)
-                
-        except Exception as e:
-            print(f"点击鼠标失败: {e}")
-            return False
-    
-    def _click_mouse_windows(self, button: str):
-        """Windows点击鼠标"""
-        import ctypes
-        
-        if button == 'left':
-            ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN
-            ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP
-        elif button == 'right':
-            ctypes.windll.user32.mouse_event(0x0008, 0, 0, 0, 0)  # MOUSEEVENTF_RIGHTDOWN
-            ctypes.windll.user32.mouse_event(0x0010, 0, 0, 0, 0)  # MOUSEEVENTF_RIGHTUP
-        
-        return True
-    
-    def _click_mouse_macos(self, button: str):
-        """macOS点击鼠标"""
-        try:
-            button_name = 'left' if button == 'left' else 'right'
-            subprocess.run([
-                'osascript', '-e', 
-                f'tell application "System Events" to click'
-            ], check=True)
-            return True
-        except:
-            return False
-    
-    def _click_mouse_linux(self, button: str):
-        """Linux点击鼠标"""
-        try:
-            button_num = '1' if button == 'left' else '3'
-            subprocess.run(['xdotool', 'click', button_num], check=True)
-            return True
-        except:
-            return False
-    
-    def scroll_mouse(self, x: int, y: int, delta: int, screen_size: Tuple[int, int] = None):
-        """滚动鼠标"""
-        if not self.enabled:
-            return False
-        
-        try:
-            # 移动到位置
-            if not self.move_mouse(x, y, screen_size):
-                return False
-            
-            if self.system == 'windows':
-                return self._scroll_mouse_windows(delta)
-            elif self.system == 'darwin':
-                return self._scroll_mouse_macos(delta)
-            elif self.system == 'linux':
-                return self._scroll_mouse_linux(delta)
-                
-        except Exception as e:
-            print(f"滚动鼠标失败: {e}")
-            return False
-    
-    def _scroll_mouse_windows(self, delta: int):
-        """Windows滚动鼠标"""
-        import ctypes
-        ctypes.windll.user32.mouse_event(0x0800, 0, 0, delta * 120, 0)  # MOUSEEVENTF_WHEEL
-        return True
-    
-    def _scroll_mouse_macos(self, delta: int):
-        """macOS滚动鼠标"""
-        try:
-            direction = 'up' if delta > 0 else 'down'
-            for _ in range(abs(delta)):
-                subprocess.run([
-                    'osascript', '-e', 
-                    f'tell application "System Events" to scroll {direction} 3'
-                ], check=True)
-            return True
-        except:
-            return False
-    
-    def _scroll_mouse_linux(self, delta: int):
-        """Linux滚动鼠标"""
-        try:
-            button = '4' if delta > 0 else '5'  # 4=up, 5=down
-            for _ in range(abs(delta)):
-                subprocess.run(['xdotool', 'click', button], check=True)
-            return True
-        except:
-            return False
+    # 所有鼠标相关功能已移除
     
     def press_key(self, key: str):
         """按下按键"""
@@ -446,6 +296,41 @@ class NativeController:
         except Exception as e:
             print(f"输入文本失败: {e}")
             return False
+    
+    def execute_command(self, command: str, shell: bool = True) -> Dict:
+        """执行命令行命令"""
+        if not self.enabled:
+            return {"success": False, "error": "控制器未启用"}
+        
+        try:
+            print(f"执行命令: {command}")
+            result = subprocess.run(
+                command if isinstance(command, list) else command,
+                shell=shell,
+                capture_output=True,
+                text=True,
+                timeout=30  # 30秒超时
+            )
+            
+            return {
+                "success": result.returncode == 0,
+                "returncode": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "command": command
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "error": "命令执行超时",
+                "command": command
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "command": command
+            }
     
     def _type_text_windows(self, text: str):
         """Windows输入文本"""
