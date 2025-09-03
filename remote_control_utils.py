@@ -26,9 +26,14 @@ try:
     PYAUTOGUI_AVAILABLE = True
     # 禁用pyautogui的故障保护
     pyautogui.FAILSAFE = False
-except ImportError:
+    print(f"✅ PyAutoGUI已加载，版本: {getattr(pyautogui, '__version__', '未知')}")
+except ImportError as e:
     PYAUTOGUI_AVAILABLE = False
-    print("警告: 未安装pyautogui，远程控制功能将受限")
+    print(f"警告: PyAutoGUI导入失败 ({e})，远程控制功能将受限")
+    print("请运行: pip install pyautogui")
+except Exception as e:
+    PYAUTOGUI_AVAILABLE = False
+    print(f"警告: PyAutoGUI初始化失败 ({e})，远程控制功能将受限")
 
 class ScreenCapture:
     """屏幕捕获类"""
