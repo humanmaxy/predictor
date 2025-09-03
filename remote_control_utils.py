@@ -25,31 +25,37 @@ PYAUTOGUI_AVAILABLE = False
 pyautogui = None
 
 def try_import_pyautogui():
-    """尝试导入PyAutoGUI"""
+    """尝试导入PyAutoGUI，支持不同的大小写形式"""
     global PYAUTOGUI_AVAILABLE, pyautogui
     
-    try:
-        import pyautogui as pg
-        pyautogui = pg
-        PYAUTOGUI_AVAILABLE = True
-        # 禁用pyautogui的故障保护
-        pyautogui.FAILSAFE = False
-        print(f"✅ PyAutoGUI已加载，版本: {getattr(pyautogui, '__version__', '未知')}")
-        return True
-    except ImportError as e:
-        print(f"❌ PyAutoGUI导入失败: {e}")
-        print("解决方案:")
-        print("  1. 运行: python fix_pyautogui.py")
-        print("  2. 或手动安装: pip install pyautogui")
-        print("  3. 屏幕共享功能仍可使用，但远程控制功能将受限")
-        return False
-    except Exception as e:
-        print(f"❌ PyAutoGUI初始化失败: {e}")
-        print("可能的原因:")
-        print("  - 缺少系统权限（macOS需要辅助功能权限）")
-        print("  - X11显示问题（Linux）")
-        print("  - 运行: python fix_pyautogui.py 进行诊断")
-        return False
+    # 尝试不同的包名（大小写变体）
+    import_names = ['pyautogui', 'PyAutoGUI', 'PYAUTOGUI']
+    
+    for import_name in import_names:
+        try:
+            import importlib
+            pg = importlib.import_module(import_name)
+            pyautogui = pg
+            PYAUTOGUI_AVAILABLE = True
+            # 禁用pyautogui的故障保护
+            pyautogui.FAILSAFE = False
+            version = getattr(pyautogui, '__version__', '未知')
+            print(f"✅ PyAutoGUI已加载 (导入名: {import_name})，版本: {version}")
+            return True
+        except ImportError:
+            continue
+        except Exception as e:
+            print(f"❌ PyAutoGUI ({import_name}) 初始化失败: {e}")
+            continue
+    
+    # 所有导入方法都失败
+    print("❌ PyAutoGUI导入失败 (尝试了所有大小写变体)")
+    print("解决方案:")
+    print("  1. 检查大小写问题: python check_pyautogui_case.py")
+    print("  2. 运行完整修复: python fix_pyautogui.py")
+    print("  3. 手动重新安装: pip uninstall PyAutoGUI pyautogui -y && pip install pyautogui")
+    print("  4. 屏幕共享功能仍可使用，但远程控制功能将受限")
+    return False
 
 # 初始导入尝试
 try_import_pyautogui()

@@ -129,9 +129,9 @@ class RemoteAssistanceLauncher:
         option4_frame = ttk.Frame(options_frame)
         option4_frame.pack(fill=tk.X)
         
-        ttk.Button(option4_frame, text="🔍 测试依赖", 
-                  command=self.test_dependencies, width=25).pack(side=tk.LEFT)
-        ttk.Label(option4_frame, text="检查PyAutoGUI和PIL功能", 
+        ttk.Button(option4_frame, text="🔍 检查大小写", 
+                  command=self.check_case_issue, width=25).pack(side=tk.LEFT)
+        ttk.Label(option4_frame, text="检查PyAutoGUI大小写问题", 
                  font=("Arial", 9)).pack(side=tk.LEFT, padx=(10, 0))
         
         # 快速设置
@@ -355,6 +355,36 @@ class RemoteAssistanceLauncher:
             
         except Exception as e:
             messagebox.showerror("测试失败", f"依赖测试失败: {e}")
+    
+    def check_case_issue(self):
+        """检查PyAutoGUI大小写问题"""
+        try:
+            import subprocess
+            import sys
+            
+            # 运行大小写检查脚本
+            result = subprocess.run([sys.executable, "check_pyautogui_case.py"], 
+                                  capture_output=True, text=True, cwd=os.path.dirname(__file__))
+            
+            # 显示结果
+            result_window = tk.Toplevel(self.root)
+            result_window.title("PyAutoGUI大小写检查结果")
+            result_window.geometry("700x500")
+            
+            text_widget = tk.Text(result_window, wrap=tk.WORD, font=("Consolas", 10))
+            scrollbar = ttk.Scrollbar(result_window, orient=tk.VERTICAL, command=text_widget.yview)
+            text_widget.configure(yscrollcommand=scrollbar.set)
+            
+            text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+            text_widget.insert(tk.END, result.stdout)
+            if result.stderr:
+                text_widget.insert(tk.END, "\n错误信息:\n")
+                text_widget.insert(tk.END, result.stderr)
+            
+        except Exception as e:
+            messagebox.showerror("检查失败", f"大小写检查失败: {e}")
     
     def run(self):
         """运行启动器"""
