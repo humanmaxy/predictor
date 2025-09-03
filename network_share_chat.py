@@ -496,16 +496,9 @@ class NetworkShareChatClient:
         download_dir_btn = ttk.Button(sync_frame, text="📁 下载目录", command=self.set_download_directory)
         download_dir_btn.pack(side=tk.RIGHT, padx=(0, 10))
         
-        # 远程控制面板
-        try:
-            self.remote_control_panel = RemoteControlPanel(
-                main_frame, 
-                self.chat_manager.remote_manager if hasattr(self.chat_manager, 'remote_manager') else None, 
-                self.user_id
-            )
-        except Exception as e:
-            print(f"远程控制面板初始化失败: {e}")
-            self.remote_control_panel = None
+        # 远程控制面板 - 延迟初始化以避免布局冲突
+        self.remote_control_panel = None
+        self.main_frame = main_frame  # 保存引用供后续使用
     
     def browse_share_path(self):
         """浏览共享路径"""
@@ -586,9 +579,19 @@ class NetworkShareChatClient:
             self.add_system_message(f"文件下载目录: {self.download_dir}")
             
             # 初始化远程控制面板
-            if self.remote_control_panel and hasattr(self.chat_manager, 'remote_manager'):
-                self.remote_control_panel.remote_manager = self.chat_manager.remote_manager
-                self.remote_control_panel.user_id = self.user_id
+            try:
+                if self.remote_control_panel is None:
+                    self.remote_control_panel = RemoteControlPanel(
+                        self.main_frame, 
+                        self.chat_manager.remote_manager, 
+                        self.user_id
+                    )
+                else:
+                    self.remote_control_panel.remote_manager = self.chat_manager.remote_manager
+                    self.remote_control_panel.user_id = self.user_id
+            except Exception as e:
+                print(f"远程控制面板初始化失败: {e}")
+                self.remote_control_panel = None
             
             # 开始消息同步和心跳
             self.start_message_sync()

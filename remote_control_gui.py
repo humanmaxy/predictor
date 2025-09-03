@@ -410,9 +410,26 @@ class RemoteControlPanel:
     
     def _create_widgets(self):
         """创建远程控制面板"""
-        # 远程控制框架
+        # 远程控制框架 - 使用grid布局以兼容主界面
         self.remote_frame = ttk.LabelFrame(self.parent_frame, text="远程控制", padding=5)
-        self.remote_frame.pack(fill=tk.X, pady=(5, 0))
+        # 获取当前网格行数并放置在下一行
+        try:
+            # 尝试获取parent_frame中已有的行数
+            grid_slaves = self.parent_frame.grid_slaves()
+            if grid_slaves:
+                rows = []
+                for child in grid_slaves:
+                    grid_info = child.grid_info()
+                    if 'row' in grid_info and grid_info['row'] is not None:
+                        rows.append(grid_info['row'])
+                max_row = max(rows) if rows else 4
+            else:
+                max_row = 4
+            self.remote_frame.grid(row=max_row+1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(5, 0))
+        except Exception as e:
+            # 如果获取失败，使用固定行号
+            print(f"Grid布局检测失败，使用固定位置: {e}")
+            self.remote_frame.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(5, 0))
         
         # 按钮框架
         button_frame = ttk.Frame(self.remote_frame)
