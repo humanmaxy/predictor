@@ -136,6 +136,110 @@ class TechnicalIndicators:
         return k_percent, d_percent
     
     @staticmethod
+    def kdj_indicator(high: pd.Series, low: pd.Series, close: pd.Series, 
+                     k_window: int = 14, d_window: int = 3, j_window: int = 3) -> Tuple[pd.Series, pd.Series, pd.Series]:
+        """
+        KDJ指标 (随机指标)
+        
+        Args:
+            high: 最高价序列
+            low: 最低价序列  
+            close: 收盘价序列
+            k_window: K值计算窗口，默认14
+            d_window: D值计算窗口，默认3
+            j_window: J值计算窗口，默认3
+            
+        Returns:
+            (K值, D值, J值) 三个序列的元组
+        """
+        # 计算RSV (Raw Stochastic Value)
+        lowest_low = low.rolling(window=k_window).min()
+        highest_high = high.rolling(window=k_window).max()
+        rsv = 100 * ((close - lowest_low) / (highest_high - lowest_low))
+        
+        # 计算K值 (使用指数移动平均)
+        k_value = rsv.ewm(alpha=1/d_window).mean()
+        
+        # 计算D值 (K值的指数移动平均)
+        d_value = k_value.ewm(alpha=1/j_window).mean()
+        
+        # 计算J值
+        j_value = 3 * k_value - 2 * d_value
+        
+        return k_value, d_value, j_value
+    
+    @staticmethod
+    def fibonacci_retracement(high_price: float, low_price: float) -> Dict[str, float]:
+        """
+        斐波那契回调位计算
+        
+        Args:
+            high_price: 最高价
+            low_price: 最低价
+            
+        Returns:
+            斐波那契回调位字典
+        """
+        diff = high_price - low_price
+        
+        levels = {
+            '0%': high_price,
+            '23.6%': high_price - diff * 0.236,
+            '38.2%': high_price - diff * 0.382,
+            '50%': high_price - diff * 0.5,
+            '61.8%': high_price - diff * 0.618,
+            '78.6%': high_price - diff * 0.786,
+            '100%': low_price
+        }
+        
+        return levels
+    
+    @staticmethod
+    def fibonacci_extension(high_price: float, low_price: float, retracement_price: float) -> Dict[str, float]:
+        """
+        斐波那契扩展位计算
+        
+        Args:
+            high_price: 最高价
+            low_price: 最低价
+            retracement_price: 回调价格
+            
+        Returns:
+            斐波那契扩展位字典
+        """
+        diff = high_price - low_price
+        
+        levels = {
+            '127.2%': retracement_price + diff * 1.272,
+            '161.8%': retracement_price + diff * 1.618,
+            '200%': retracement_price + diff * 2.0,
+            '261.8%': retracement_price + diff * 2.618
+        }
+        
+        return levels
+    
+    @staticmethod
+    def volume_analysis(volume: pd.Series, price: pd.Series, window: int = 20) -> pd.Series:
+        """
+        成交量分析
+        
+        Args:
+            volume: 成交量序列
+            price: 价格序列
+            window: 计算窗口
+            
+        Returns:
+            成交量相对强度序列
+        """
+        # 计算成交量移动平均
+        volume_ma = volume.rolling(window=window).mean()
+        
+        # 成交量相对强度
+        volume_ratio = volume / volume_ma
+        
+        return volume_ratio
+    
+    @staticmethod
     def williams_r(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 14) -> pd.Series:
         """
         威廉指标 (%R)
@@ -236,12 +340,26 @@ class IndicatorAnalyzer:
             result_df['MACD_Signal'] = signal
             result_df['MACD_Histogram'] = histogram
             
-            # 随机振荡器
+            # 随机振荡器 (KD)
             k_percent, d_percent = self.indicators.stochastic_oscillator(
                 result_df['high'], result_df['low'], result_df['close']
             )
             result_df['Stoch_K'] = k_percent
             result_df['Stoch_D'] = d_percent
+            
+            # KDJ指标
+            kdj_k, kdj_d, kdj_j = self.indicators.kdj_indicator(
+                result_df['high'], result_df['low'], result_df['close']
+            )
+            result_df['KDJ_K'] = kdj_k
+            result_df['KDJ_D'] = kdj_d
+            result_df['KDJ_J'] = kdj_j
+            
+            # 成交量分析
+            if 'volume' in result_df.columns:
+                result_df['Volume_Ratio'] = self.indicators.volume_analysis(
+                    result_df['volume'], result_df['price']
+                )
             
             # 威廉指标
             result_df['Williams_R'] = self.indicators.williams_r(
@@ -253,12 +371,52 @@ class IndicatorAnalyzer:
                 result_df['high'], result_df['low'], result_df['close']
             )
             
+            # 添加斐波那契分析
+            result_df = self.add_fibonacci_analysis(result_df)
+            
             logger.info(f"成功计算技术指标，数据形状: {result_df.shape}")
             return result_df
             
         except Exception as e:
             logger.error(f"技术指标计算失败: {e}")
             raise
+    
+    def add_fibonacci_analysis(self, df: pd.DataFrame, period: int = 20) -> pd.DataFrame:
+        """
+        添加斐波那契分析
+        
+        Args:
+            df: 包含价格数据的DataFrame
+            period: 分析周期
+            
+        Returns:
+            添加斐波那契水平的DataFrame
+        """
+        try:
+            result_df = df.copy()
+            
+            # 计算滚动的高低点
+            rolling_high = df['high'].rolling(window=period).max()
+            rolling_low = df['low'].rolling(window=period).min()
+            
+            # 计算斐波那契回调位
+            fib_23_6 = rolling_high - (rolling_high - rolling_low) * 0.236
+            fib_38_2 = rolling_high - (rolling_high - rolling_low) * 0.382
+            fib_50_0 = rolling_high - (rolling_high - rolling_low) * 0.5
+            fib_61_8 = rolling_high - (rolling_high - rolling_low) * 0.618
+            
+            result_df['Fib_23.6'] = fib_23_6
+            result_df['Fib_38.2'] = fib_38_2
+            result_df['Fib_50.0'] = fib_50_0
+            result_df['Fib_61.8'] = fib_61_8
+            result_df['Fib_High'] = rolling_high
+            result_df['Fib_Low'] = rolling_low
+            
+            return result_df
+            
+        except Exception as e:
+            logger.error(f"斐波那契分析失败: {e}")
+            return df
     
     def get_trading_signals(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -278,6 +436,9 @@ class IndicatorAnalyzer:
             signals_df['BB_Signal'] = 0  # 布林带信号
             signals_df['RSI_Signal'] = 0  # RSI信号
             signals_df['MACD_Signal_Trade'] = 0  # MACD信号
+            signals_df['KDJ_Signal'] = 0  # KDJ信号
+            signals_df['Volume_Signal'] = 0  # 成交量信号
+            signals_df['Fibonacci_Signal'] = 0  # 斐波那契信号
             
             # MA交叉信号 (金叉死叉)
             if 'MA5' in signals_df.columns and 'MA20' in signals_df.columns:
@@ -337,8 +498,43 @@ class IndicatorAnalyzer:
                     signals_df.loc[macd_golden_cross, 'MACD_Signal_Trade'] = 1
                     signals_df.loc[macd_death_cross, 'MACD_Signal_Trade'] = -1
             
+            # KDJ信号
+            if all(col in signals_df.columns for col in ['KDJ_K', 'KDJ_D', 'KDJ_J']):
+                # KDJ超买超卖信号
+                kdj_oversold = (signals_df['KDJ_K'] < 20) & (signals_df['KDJ_D'] < 20)
+                kdj_overbought = (signals_df['KDJ_K'] > 80) & (signals_df['KDJ_D'] > 80)
+                
+                # KDJ金叉死叉
+                k_above_d = signals_df['KDJ_K'] > signals_df['KDJ_D']
+                k_above_d_prev = k_above_d.shift(1)
+                kdj_golden_cross = (~k_above_d_prev) & k_above_d & (signals_df['KDJ_K'] < 50)
+                kdj_death_cross = k_above_d_prev & (~k_above_d) & (signals_df['KDJ_K'] > 50)
+                
+                signals_df.loc[kdj_oversold | kdj_golden_cross, 'KDJ_Signal'] = 1
+                signals_df.loc[kdj_overbought | kdj_death_cross, 'KDJ_Signal'] = -1
+            
+            # 成交量信号
+            if 'Volume_Ratio' in signals_df.columns:
+                # 放量突破信号
+                volume_breakout = signals_df['Volume_Ratio'] > 1.5
+                volume_weak = signals_df['Volume_Ratio'] < 0.5
+                
+                signals_df.loc[volume_breakout, 'Volume_Signal'] = 1
+                signals_df.loc[volume_weak, 'Volume_Signal'] = -1
+            
+            # 斐波那契信号
+            if all(col in signals_df.columns for col in ['Fib_38.2', 'Fib_61.8', 'price']):
+                # 价格在关键斐波那契位附近
+                near_fib_382 = np.abs(signals_df['price'] - signals_df['Fib_38.2']) / signals_df['price'] < 0.01
+                near_fib_618 = np.abs(signals_df['price'] - signals_df['Fib_61.8']) / signals_df['price'] < 0.01
+                
+                # 在斐波那契支撑位附近：买入信号
+                at_support = near_fib_382 | near_fib_618
+                signals_df.loc[at_support, 'Fibonacci_Signal'] = 1
+            
             # 综合信号
-            signal_columns = ['MA_Signal', 'BB_Signal', 'RSI_Signal', 'MACD_Signal_Trade']
+            signal_columns = ['MA_Signal', 'BB_Signal', 'RSI_Signal', 'MACD_Signal_Trade', 
+                            'KDJ_Signal', 'Volume_Signal', 'Fibonacci_Signal']
             existing_signals = [col for col in signal_columns if col in signals_df.columns]
             
             if existing_signals:

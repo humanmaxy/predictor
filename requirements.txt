@@ -1,0 +1,32 @@
+# 基础依赖
+requests>=2.31.0
+pandas>=2.0.0
+numpy>=1.24.0
+matplotlib>=3.7.0
+plotly>=5.17.0
+
+# 技术指标计算
+ta>=0.10.2
+TA-Lib>=0.4.25
+
+# AI和机器学习
+openai>=1.3.0
+python-dotenv>=1.0.0
+
+# GUI界面
+tkinter  # Python标准库，通常已包含
+
+# 日志和工具
+logging  # Python标准库
+threading  # Python标准库
+json  # Python标准库
+datetime  # Python标准库
+typing  # Python标准库
+
+# 可选：更好的图表显示
+seaborn>=0.12.0
+mplfinance>=0.12.9
+
+# 开发工具（可选）
+jupyter>=1.0.0
+ipython>=8.0.0

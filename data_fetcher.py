@@ -1,6 +1,6 @@
 """
 数据获取模块
-使用CoinGecko API获取数字货币行情数据
+支持CoinGlass API和CoinGecko API获取数字货币行情数据
 """
 
 import requests
@@ -13,6 +13,139 @@ import os
 # 配置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class CoinglassDataFetcher:
+    """Coinglass数据获取器"""
+    
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or os.getenv('COINGLASS_API_KEY')
+        self.base_url = "https://open-api-v4.coinglass.com/api"
+        self.session = requests.Session()
+        
+        if self.api_key:
+            self.session.headers.update({
+                'CG-API-KEY': self.api_key,
+                'accept': 'application/json'
+            })
+        
+        # 支持的交易对映射
+        self.symbol_map = {
+            'BTC': 'BTCUSDT',
+            'ETH': 'ETHUSDT', 
+            'SOL': 'SOLUSDT',
+            'XRP': 'XRPUSDT',
+            'ADA': 'ADAUSDT',
+            'DOT': 'DOTUSDT',
+            'LINK': 'LINKUSDT',
+            'LTC': 'LTCUSDT',
+            'BCH': 'BCHUSDT',
+            'UNI': 'UNIUSDT',
+            'AVAX': 'AVAXUSDT',
+            'MATIC': 'MATICUSDT'
+        }
+    
+    def get_kline_data(self, symbol: str, interval: str = '1h', limit: int = 200) -> pd.DataFrame:
+        """
+        获取K线数据
+        
+        Args:
+            symbol: 交易对符号 (如 'BTC', 'ETH')
+            interval: 时间间隔 ('1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w')
+            limit: 数据条数限制
+            
+        Returns:
+            包含OHLCV数据的DataFrame
+        """
+        try:
+            # 转换符号
+            trading_pair = self.symbol_map.get(symbol.upper(), f"{symbol.upper()}USDT")
+            
+            url = f"{self.base_url}/spot/kline"
+            params = {
+                'symbol': trading_pair,
+                'interval': interval,
+                'limit': limit
+            }
+            
+            response = self.session.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if data.get('code') == '0' and data.get('data'):
+                klines = data['data']
+                
+                df = pd.DataFrame(klines, columns=[
+                    'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                    'close_time', 'quote_volume', 'count', 'taker_buy_volume',
+                    'taker_buy_quote_volume', 'ignore'
+                ])
+                
+                # 数据类型转换
+                df['timestamp'] = pd.to_datetime(df['timestamp'].astype(int), unit='ms')
+                for col in ['open', 'high', 'low', 'close', 'volume']:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                
+                # 设置索引
+                df.set_index('timestamp', inplace=True)
+                
+                # 重命名列以保持兼容性
+                df['price'] = df['close']
+                df['symbol'] = symbol.upper()
+                
+                logger.info(f"成功获取 {symbol} {interval} K线数据，共{len(df)}条记录")
+                return df[['open', 'high', 'low', 'close', 'price', 'volume', 'symbol']]
+            else:
+                error_msg = data.get('msg', '未知错误')
+                raise Exception(f"API返回错误: {error_msg}")
+                
+        except Exception as e:
+            logger.error(f"获取K线数据失败: {e}")
+            raise
+    
+    def get_ticker_data(self, symbol: str) -> Dict:
+        """
+        获取ticker数据
+        
+        Args:
+            symbol: 交易对符号
+            
+        Returns:
+            ticker数据字典
+        """
+        try:
+            trading_pair = self.symbol_map.get(symbol.upper(), f"{symbol.upper()}USDT")
+            
+            url = f"{self.base_url}/spot/ticker"
+            params = {'symbol': trading_pair}
+            
+            response = self.session.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if data.get('code') == '0' and data.get('data'):
+                ticker = data['data']
+                return {
+                    'symbol': symbol.upper(),
+                    'price': float(ticker.get('lastPrice', 0)),
+                    'change_24h': float(ticker.get('priceChangePercent', 0)),
+                    'volume_24h': float(ticker.get('volume', 0)),
+                    'high_24h': float(ticker.get('highPrice', 0)),
+                    'low_24h': float(ticker.get('lowPrice', 0)),
+                    'open_price': float(ticker.get('openPrice', 0))
+                }
+            else:
+                raise Exception(f"API返回错误: {data.get('msg', '未知错误')}")
+                
+        except Exception as e:
+            logger.error(f"获取ticker数据失败: {e}")
+            raise
+    
+    def get_supported_symbols(self) -> List[str]:
+        """获取支持的交易对列表"""
+        return list(self.symbol_map.keys())
 
 
 class CryptoDataFetcher:
