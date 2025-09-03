@@ -20,6 +20,7 @@ import glob
 # 导入加密和文件传输工具
 from encryption_utils import ChatEncryption
 from file_transfer_utils import FileTransferManager
+from improved_file_manager import FileManagerWindow, DownloadButton
 
 class NetworkShareChatManager:
     """网络共享目录聊天管理器"""
@@ -437,7 +438,10 @@ class NetworkShareChatClient:
         self.file_btn.pack(side=tk.LEFT, padx=(0, 2))
         
         self.image_btn = ttk.Button(file_btn_frame, text="🖼️ 图片", command=self.send_image)
-        self.image_btn.pack(side=tk.LEFT)
+        self.image_btn.pack(side=tk.LEFT, padx=(0, 2))
+        
+        self.file_manager_btn = ttk.Button(file_btn_frame, text="📁 文件管理", command=self.open_file_manager)
+        self.file_manager_btn.pack(side=tk.LEFT)
         
         # 初始状态设置
         self.set_chat_state(False)
@@ -496,6 +500,7 @@ class NetworkShareChatClient:
         self.send_btn.config(state=state)
         self.file_btn.config(state=state)
         self.image_btn.config(state=state)
+        self.file_manager_btn.config(state=state)
     
     def toggle_connection(self):
         """切换连接状态"""
@@ -934,8 +939,8 @@ class NetworkShareChatClient:
             
             if is_public:
                 self.add_chat_message(message_text)
-                # 添加下载按钮（简化版本，显示提示）
-                self.add_chat_message(f"    💡 双击可下载文件")
+                # 添加下载提示和文件管理器链接
+                self.add_chat_message(f"    📥 使用文件管理器下载，或点击上方 '📁 文件管理' 按钮")
             
         except Exception as e:
             print(f"添加文件消息失败: {e}")
@@ -981,6 +986,18 @@ class NetworkShareChatClient:
                 original_title = window.title()
                 window.title(f"[新消息] {original_title}")
                 window.after(3000, lambda: window.title(original_title))
+    
+    def open_file_manager(self):
+        """打开文件管理器"""
+        if not self.connected:
+            messagebox.showwarning("未连接", "请先连接到聊天室")
+            return
+        
+        try:
+            # 创建文件管理窗口
+            FileManagerWindow(self.root, self.chat_manager, self.user_id, self.username)
+        except Exception as e:
+            messagebox.showerror("错误", f"无法打开文件管理器: {str(e)}")
     
     def on_closing(self):
         """窗口关闭事件"""
