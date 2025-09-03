@@ -69,6 +69,15 @@ class AIPredictor:
             ma5_current = df['MA5'].iloc[-1] if 'MA5' in df.columns else None
             ma20_current = df['MA20'].iloc[-1] if 'MA20' in df.columns else None
             
+            # KDJ指标状态
+            kdj_k = df['KDJ_K'].iloc[-1] if 'KDJ_K' in df.columns else None
+            kdj_d = df['KDJ_D'].iloc[-1] if 'KDJ_D' in df.columns else None
+            kdj_j = df['KDJ_J'].iloc[-1] if 'KDJ_J' in df.columns else None
+            
+            # 斐波那契水平
+            fib_382 = df['Fib_38.2'].iloc[-1] if 'Fib_38.2' in df.columns else None
+            fib_618 = df['Fib_61.8'].iloc[-1] if 'Fib_61.8' in df.columns else None
+            
             # 布林带位置
             bb_position = None
             if all(col in df.columns for col in ['BB_Upper', 'BB_Lower', 'price']):
@@ -99,6 +108,30 @@ class AIPredictor:
                 volume_change = (recent_volume - previous_volume) / previous_volume * 100
                 volume_trend = "放量" if volume_change > 20 else "缩量" if volume_change < -20 else "平稳"
             
+            # KDJ信号分析
+            kdj_signal = None
+            if kdj_k and kdj_d and kdj_j:
+                if kdj_k < 20 and kdj_d < 20:
+                    kdj_signal = "超卖区域"
+                elif kdj_k > 80 and kdj_d > 80:
+                    kdj_signal = "超买区域"
+                elif kdj_k > kdj_d:
+                    kdj_signal = "金叉向上"
+                else:
+                    kdj_signal = "死叉向下"
+            
+            # 斐波那契位置分析
+            fib_analysis = None
+            if fib_382 and fib_618:
+                if abs(current_price - fib_382) / current_price < 0.02:
+                    fib_analysis = "接近38.2%回调位"
+                elif abs(current_price - fib_618) / current_price < 0.02:
+                    fib_analysis = "接近61.8%回调位"
+                elif current_price > fib_382:
+                    fib_analysis = "在38.2%回调位上方"
+                else:
+                    fib_analysis = "在61.8%回调位下方"
+            
             # 格式化数据
             market_summary = f"""
 数字货币: {symbol}
@@ -111,9 +144,11 @@ class AIPredictor:
 - MA5: ${ma5_current:.4f if ma5_current else 'N/A'}
 - MA20: ${ma20_current:.4f if ma20_current else 'N/A'}
 - MA趋势: {'多头排列' if ma5_current and ma20_current and ma5_current > ma20_current else '空头排列' if ma5_current and ma20_current else 'N/A'}
+- KDJ指标: K={kdj_k:.2f if kdj_k else 'N/A'}, D={kdj_d:.2f if kdj_d else 'N/A'}, J={kdj_j:.2f if kdj_j else 'N/A'} ({kdj_signal or 'N/A'})
 - 布林带位置: {bb_position or 'N/A'}
 - MACD信号: {macd_signal or 'N/A'}
 - 成交量: {volume_trend or 'N/A'}
+- 斐波那契: {fib_analysis or 'N/A'}
 
 最近10个交易周期价格走势:
 {latest_data[['price']].to_string()}
@@ -144,31 +179,56 @@ class AIPredictor:
             
             # 构建预测提示
             prompt = f"""
-你是一位专业的数字货币技术分析师。请基于以下市场数据对{symbol}进行{prediction_days}天的趋势预测和分析。
+你是一位专业的数字货币技术分析师，精通各种技术指标和经典技术分析理论。请基于以下市场数据对{symbol}进行{prediction_days}天的趋势预测和分析。
 
 {market_data}
 
-请从以下几个方面进行分析：
-1. 技术面分析：基于技术指标（MA、RSI、MACD、布林带等）判断当前趋势
-2. 短期预测：未来{prediction_days}天的价格走势预测
-3. 关键支撑阻力位：重要的价格支撑和阻力位
-4. 风险提示：潜在的风险因素
-5. 交易建议：基于技术分析的交易策略建议
+请运用以下专业知识进行深度分析：
+
+技术分析要点：
+1. 移动平均线系统：分析MA5、MA20的金叉死叉，多头空头排列
+2. RSI相对强弱指标：判断超买超卖，寻找背离信号
+3. KDJ随机指标：分析K、D、J三线的金叉死叉，超买超卖区域
+4. MACD指标：分析DIF、DEA线的金叉死叉，柱状线的变化趋势
+5. 布林带：价格相对于上下轨的位置，布林带收缩扩张
+6. 成交量：量价关系分析，放量突破，缩量整理
+7. 斐波那契回调：关键回调位38.2%、50%、61.8%的支撑阻力作用
+
+经典形态识别：
+- 金叉死叉：均线、KDJ、MACD的交叉信号
+- 顶背离底背离：价格与指标的背离现象
+- 突破确认：关键支撑阻力位的有效突破
+- 量价配合：成交量与价格变化的协调性
+
+请从以下维度进行分析：
+1. 当前技术面状态评估
+2. 关键技术指标信号解读
+3. 支撑阻力位识别（结合斐波那契）
+4. 未来{prediction_days}天趋势预测
+5. 具体的买入卖出建议和风险控制
 
 请用JSON格式返回分析结果，包含以下字段：
 {{
     "trend_direction": "上涨/下跌/震荡",
-    "confidence": "高/中/低",
+    "confidence": "高/中/低", 
     "target_price": 目标价格数值,
     "support_level": 支撑位价格,
     "resistance_level": 阻力位价格,
+    "buy_zone_low": 买入区间下限,
+    "buy_zone_high": 买入区间上限,
+    "sell_zone_low": 卖出区间下限,
+    "sell_zone_high": 卖出区间上限,
+    "stop_loss": 止损位,
     "risk_level": "高/中/低",
-    "trading_suggestion": "买入/卖出/观望",
-    "analysis_summary": "详细分析总结",
-    "key_factors": ["关键因素1", "关键因素2", "关键因素3"]
+    "trading_suggestion": "强买入/买入/观望/卖出/强卖出",
+    "analysis_summary": "详细的技术分析总结，包括各指标的具体状态和信号",
+    "key_factors": ["关键技术信号1", "关键技术信号2", "关键技术信号3"],
+    "fibonacci_levels": "斐波那契关键位分析",
+    "volume_analysis": "成交量分析结论",
+    "signal_strength": "信号强度评分(1-10)"
 }}
 
-请确保分析客观、专业，并基于技术指标数据进行判断。
+请确保分析严格基于技术指标数据，运用专业的技术分析方法。
 """
             
             # 调用DeepSeek API
