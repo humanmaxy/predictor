@@ -504,7 +504,7 @@ class DownloadButton:
             file_name = self.file_info.get('original_name', 'download_file')
             save_path = filedialog.asksaveasfilename(
                 title="保存文件",
-                initialname=file_name,
+                initialfile=file_name,
                 defaultextension=Path(file_name).suffix
             )
             

@@ -17,8 +17,7 @@ from tkinter import ttk, messagebox, scrolledtext, filedialog
 import shutil
 import glob
 
-# 导入加密和文件传输工具
-from encryption_utils import ChatEncryption
+# 导入文件传输工具
 from file_transfer_utils import FileTransferManager
 # 注释掉复杂的导入，使用内置的简单实现
 # from improved_file_manager import FileManagerWindow, DownloadButton
@@ -101,12 +100,10 @@ class NetworkShareChatManager:
             else:
                 message_data["message_type"] = "text"
             
-            # 加密消息数据
-            encrypted_data = ChatEncryption.encrypt_message(message_data)
-            
+            # 直接保存消息数据为JSON
             file_path = self.public_dir / filename
             with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(encrypted_data)
+                json.dump(message_data, f, ensure_ascii=False, indent=2)
             
             return True
         except Exception as e:
@@ -140,12 +137,10 @@ class NetworkShareChatManager:
             else:
                 message_data["message_type"] = "text"
             
-            # 加密消息数据
-            encrypted_data = ChatEncryption.encrypt_message(message_data)
-            
+            # 直接保存消息数据为JSON
             file_path = private_chat_dir / filename
             with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(encrypted_data)
+                json.dump(message_data, f, ensure_ascii=False, indent=2)
             
             return True
         except Exception as e:
@@ -214,12 +209,8 @@ class NetworkShareChatManager:
                     with open(file_path, 'r', encoding='utf-8') as f:
                         file_content = f.read().strip()
                     
-                    # 尝试解密消息
-                    if ChatEncryption.is_encrypted_data(file_content):
-                        message_data = ChatEncryption.decrypt_message(file_content)
-                    else:
-                        # 兼容未加密的旧消息
-                        message_data = json.loads(file_content)
+                    # 直接解析JSON消息
+                    message_data = json.loads(file_content)
                     
                     if message_data:  # 解密成功
                         message_data['_filename'] = filename
